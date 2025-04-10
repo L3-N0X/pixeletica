@@ -17,8 +17,9 @@ from pixeletica.gui.app import DitherApp
 
 
 def ensure_output_dir():
-    """Ensure that the output directory exists."""
+    """Ensure that the output directories exist."""
     os.makedirs("./out/dithered", exist_ok=True)
+    os.makedirs("./out/schematics", exist_ok=True)
 
 
 def run_gui():

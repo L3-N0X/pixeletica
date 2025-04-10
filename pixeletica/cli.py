@@ -2,6 +2,7 @@
 Command-line interface for Pixeletica.
 """
 
+import os
 import time
 from pixeletica.block_utils.block_loader import load_block_colors
 from pixeletica.dithering import get_algorithm_by_name
@@ -118,6 +119,44 @@ def run_cli():
         )
         print(f"Success! Dithered image saved to: {output_path}")
         print(f"Processing took {processing_time:.2f} seconds")
+
+        # Ask if the user wants to generate a schematic
+        print("\nDo you want to generate a Litematica schematic? (y/n)")
+        generate_schematic = input().strip().lower() == "y"
+
+        if generate_schematic:
+            # Get schematic metadata
+            print("\n--- Schematic Metadata ---")
+            print("Leave empty to use default values")
+
+            author = input("Author [L3-N0X - pixeletica]: ").strip()
+            if not author:
+                author = "L3-N0X - pixeletica"
+
+            schematic_name = input(
+                f"Name [{os.path.splitext(os.path.basename(image_path))[0]}]: "
+            ).strip()
+            if not schematic_name:
+                schematic_name = os.path.splitext(os.path.basename(image_path))[0]
+
+            description = input("Description: ").strip()
+
+            # Generate the schematic
+            from pixeletica.schematic_generator import generate_schematic
+
+            metadata = {
+                "author": author,
+                "name": schematic_name,
+                "description": description,
+            }
+
+            try:
+                schematic_path = generate_schematic(
+                    block_ids, image_path, algorithm_id, metadata
+                )
+                print(f"Success! Schematic saved to: {schematic_path}")
+            except Exception as e:
+                print(f"Error generating schematic: {e}")
 
     except Exception as e:
         print(f"Error applying dithering: {e}")

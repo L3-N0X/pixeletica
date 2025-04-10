@@ -42,6 +42,7 @@ class DitherApp:
         self._create_image_selection(main_frame)
         self._create_resize_options(main_frame)
         self._create_dithering_options(main_frame)
+        self._create_schematic_options(main_frame)
         self._create_action_buttons(main_frame)
         self._create_status_bar(root)
         self._create_preview_area(main_frame)
@@ -130,6 +131,72 @@ class DitherApp:
             variable=self.algorithm_var,
             value="random",
         ).pack(anchor=tk.W, pady=5)
+
+    def _create_schematic_options(self, parent):
+        """Create options for Litematica schematic generation."""
+        schematic_frame = ttk.LabelFrame(
+            parent, text="Litematica Schematic", padding="10"
+        )
+        schematic_frame.pack(fill=tk.X, pady=10)
+
+        # Option to enable/disable schematic generation
+        self.generate_schematic_var = tk.BooleanVar(value=False)
+        self.generate_schematic_checkbox = ttk.Checkbutton(
+            schematic_frame,
+            text="Generate Litematica Schematic",
+            variable=self.generate_schematic_var,
+            command=self.toggle_schematic_options,
+        )
+        self.generate_schematic_checkbox.pack(pady=5, anchor=tk.W)
+
+        # Create a frame for schematic options
+        self.schematic_options_frame = ttk.Frame(schematic_frame)
+        self.schematic_options_frame.pack(fill=tk.X, pady=5)
+
+        # Author field
+        ttk.Label(self.schematic_options_frame, text="Author:").grid(
+            row=0, column=0, sticky=tk.W, padx=5, pady=2
+        )
+        self.author_var = tk.StringVar(value="L3-N0X - pixeletica")
+        self.author_entry = ttk.Entry(
+            self.schematic_options_frame, textvariable=self.author_var
+        )
+        self.author_entry.grid(row=0, column=1, sticky=tk.W + tk.E, padx=5, pady=2)
+
+        # Name field
+        ttk.Label(self.schematic_options_frame, text="Name:").grid(
+            row=1, column=0, sticky=tk.W, padx=5, pady=2
+        )
+        self.schematic_name_var = tk.StringVar()
+        self.schematic_name_entry = ttk.Entry(
+            self.schematic_options_frame, textvariable=self.schematic_name_var
+        )
+        self.schematic_name_entry.grid(
+            row=1, column=1, sticky=tk.W + tk.E, padx=5, pady=2
+        )
+
+        # Description field
+        ttk.Label(self.schematic_options_frame, text="Description:").grid(
+            row=2, column=0, sticky=tk.W, padx=5, pady=2
+        )
+        self.description_var = tk.StringVar()
+        self.description_entry = ttk.Entry(
+            self.schematic_options_frame, textvariable=self.description_var
+        )
+        self.description_entry.grid(row=2, column=1, sticky=tk.W + tk.E, padx=5, pady=2)
+
+        # Initially disable the schematic options
+        self.toggle_schematic_options()
+
+    def toggle_schematic_options(self):
+        """Enable or disable schematic options based on checkbox."""
+        if self.generate_schematic_var.get():
+            for child in self.schematic_options_frame.winfo_children():
+                child.configure(state="normal")
+        else:
+            for child in self.schematic_options_frame.winfo_children():
+                if isinstance(child, ttk.Entry) or isinstance(child, ttk.Combobox):
+                    child.configure(state="disabled")
 
     def _create_action_buttons(self, parent):
         """Create action buttons."""
@@ -304,6 +371,42 @@ class DitherApp:
                     )
                     self.dithered_img = dithered_img
                     self.display_image(dithered_img)
+
+                    # Generate schematic if requested
+                    if self.generate_schematic_var.get() and block_ids:
+                        try:
+                            # Set default name if empty
+                            if not self.schematic_name_var.get():
+                                image_name = os.path.basename(self.img_path_var.get())
+                                base_name = os.path.splitext(image_name)[0]
+                                self.schematic_name_var.set(base_name)
+
+                            # Import schematic generator
+                            from pixeletica.schematic_generator import (
+                                generate_schematic,
+                            )
+
+                            # Prepare metadata
+                            metadata = {
+                                "author": self.author_var.get(),
+                                "name": self.schematic_name_var.get(),
+                                "description": self.description_var.get(),
+                            }
+
+                            # Generate schematic
+                            self.status_var.set("Generating Litematica schematic...")
+                            self.root.update_idletasks()
+
+                            schematic_path = generate_schematic(
+                                block_ids,
+                                self.img_path_var.get(),
+                                algorithm_name,
+                                metadata,
+                            )
+
+                            self.status_var.set(f"Saved schematic to: {schematic_path}")
+                        except Exception as e:
+                            self.status_var.set(f"Error generating schematic: {e}")
                 except Exception as e:
                     self.status_var.set(f"Error saving image: {e}")
 
