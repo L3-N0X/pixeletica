@@ -27,7 +27,7 @@ class DitherApp:
         """
         self.root = root
         root.title("Pixeletica Minecraft Dithering")
-        root.geometry("800x600")
+        root.geometry("1000x700")  # Increased window size
 
         # Set style
         style = ttk.Style()
@@ -37,18 +37,32 @@ class DitherApp:
             # Fallback if theme not available
             pass
 
-        # Main frame
-        main_frame = ttk.Frame(root, padding="10")
-        main_frame.pack(fill=tk.BOTH, expand=True)
-
-        # Create the UI components
-        self._create_image_selection(main_frame)
-        self._create_resize_options(main_frame)
-        self._create_dithering_options(main_frame)
-        self._create_schematic_options(main_frame)
-        self._create_action_buttons(main_frame)
+        # Create status bar at the bottom
         self._create_status_bar(root)
-        self._create_preview_area(main_frame)
+
+        # Main layout - split into two panes horizontally
+        main_frame = ttk.PanedWindow(root, orient=tk.HORIZONTAL)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Left side - settings
+        settings_frame = ttk.Frame(main_frame, padding="5")
+        main_frame.add(settings_frame, weight=1)
+
+        # Right side - preview
+        preview_frame = ttk.LabelFrame(main_frame, text="Preview", padding="10")
+        main_frame.add(preview_frame, weight=2)
+
+        # Create the preview canvas
+        self.canvas = tk.Canvas(preview_frame, bg="white")
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+
+        # Create the settings UI components in the left frame
+        self._create_image_selection(settings_frame)
+        self._create_dimensions_coordinates_section(settings_frame)
+        self._create_dithering_options(settings_frame)
+        self._create_schematic_options(settings_frame)
+        self._create_export_settings(settings_frame)
+        self._create_action_buttons(settings_frame)
 
         # Initialize
         self.original_img = None
@@ -77,79 +91,102 @@ class DitherApp:
             side=tk.RIGHT, padx=5
         )
 
-    def _create_resize_options(self, parent):
-        """Create resize options frame."""
-        resize_frame = ttk.LabelFrame(parent, text="Resize Options", padding="10")
-        resize_frame.pack(fill=tk.X, pady=10)
+    def _create_dimensions_coordinates_section(self, parent):
+        """Create dimensions and Minecraft coordinates section frame."""
+        dim_coord_frame = ttk.LabelFrame(
+            parent, text="Dimensions & Coordinates", padding="10"
+        )
+        dim_coord_frame.pack(fill=tk.X, pady=5)
 
-        ttk.Label(resize_frame, text="Width:").grid(
+        # Create dimensions frame
+        dim_frame = ttk.Frame(dim_coord_frame)
+        dim_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(dim_frame, text="Width:").grid(
             row=0, column=0, padx=5, pady=5, sticky=tk.W
         )
         self.width_var = tk.StringVar()
-        ttk.Entry(resize_frame, textvariable=self.width_var, width=10).grid(
+        ttk.Entry(dim_frame, textvariable=self.width_var, width=10).grid(
             row=0, column=1, padx=5, pady=5
         )
 
-        ttk.Label(resize_frame, text="Height:").grid(
+        ttk.Label(dim_frame, text="Height:").grid(
             row=1, column=0, padx=5, pady=5, sticky=tk.W
         )
         self.height_var = tk.StringVar()
-        ttk.Entry(resize_frame, textvariable=self.height_var, width=10).grid(
+        ttk.Entry(dim_frame, textvariable=self.height_var, width=10).grid(
             row=1, column=1, padx=5, pady=5
         )
 
-        ttk.Label(resize_frame, text="(Leave empty to maintain aspect ratio)").grid(
+        ttk.Label(dim_frame, text="(Leave empty to maintain aspect ratio)").grid(
             row=0, column=2, rowspan=2, padx=5, pady=5, sticky=tk.W
         )
+
+        # Create Minecraft coordinates frame
+        coord_frame = ttk.Frame(dim_coord_frame)
+        coord_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(coord_frame, text="Origin X:").grid(
+            row=0, column=0, padx=5, pady=5, sticky=tk.W
+        )
+        self.origin_x_var = tk.IntVar(value=0)
+        ttk.Entry(coord_frame, textvariable=self.origin_x_var, width=10).grid(
+            row=0, column=1, padx=5, pady=5
+        )
+
+        ttk.Label(coord_frame, text="Origin Z:").grid(
+            row=1, column=0, padx=5, pady=5, sticky=tk.W
+        )
+        self.origin_z_var = tk.IntVar(value=0)
+        ttk.Entry(coord_frame, textvariable=self.origin_z_var, width=10).grid(
+            row=1, column=1, padx=5, pady=5
+        )
+
+        # Description of what these coordinates represent
+        ttk.Label(
+            coord_frame,
+            text="(Top-left corner coordinates in Minecraft world)",
+            wraplength=200,
+        ).grid(row=0, column=2, rowspan=2, padx=5, pady=5, sticky=tk.W)
 
     def _create_dithering_options(self, parent):
         """Create dithering algorithm options."""
         dither_frame = ttk.LabelFrame(parent, text="Dithering Algorithm", padding="10")
-        dither_frame.pack(fill=tk.X, pady=10)
+        dither_frame.pack(fill=tk.X, pady=5)
 
         self.algorithm_var = tk.StringVar(value="floyd_steinberg")
 
         # Create radio buttons for each algorithm
         ttk.Radiobutton(
             dither_frame, text="No Dithering", variable=self.algorithm_var, value="none"
-        ).pack(anchor=tk.W, pady=5)
+        ).pack(anchor=tk.W, pady=3)
 
         ttk.Radiobutton(
             dither_frame,
             text="Floyd-Steinberg",
             variable=self.algorithm_var,
             value="floyd_steinberg",
-        ).pack(anchor=tk.W, pady=5)
+        ).pack(anchor=tk.W, pady=3)
 
         ttk.Radiobutton(
             dither_frame,
             text="Ordered Dithering",
             variable=self.algorithm_var,
             value="ordered",
-        ).pack(anchor=tk.W, pady=5)
+        ).pack(anchor=tk.W, pady=3)
 
         ttk.Radiobutton(
             dither_frame,
             text="Random Dithering",
             variable=self.algorithm_var,
             value="random",
-        ).pack(anchor=tk.W, pady=5)
+        ).pack(anchor=tk.W, pady=3)
 
     def _create_schematic_options(self, parent):
         """Create options for Litematica schematic generation."""
-        # Create a notebook with tabs for different options
-        notebook = ttk.Notebook(parent)
-        notebook.pack(fill=tk.X, pady=10)
+        schematic_frame = ttk.LabelFrame(parent, text="Schematic", padding="10")
+        schematic_frame.pack(fill=tk.X, pady=5)
 
-        # Tab for schematic options
-        schematic_frame = ttk.Frame(notebook, padding="10")
-        notebook.add(schematic_frame, text="Schematic")
-
-        # Tab for export options
-        export_frame = ttk.Frame(notebook, padding="10")
-        notebook.add(export_frame, text="Export Settings")
-
-        # Add schematic options
         # Option to enable/disable schematic generation
         self.generate_schematic_var = tk.BooleanVar(value=False)
         self.generate_schematic_checkbox = ttk.Checkbutton(
@@ -199,10 +236,6 @@ class DitherApp:
         # Initially disable the schematic options
         self.toggle_schematic_options()
 
-        # Add export settings to the export tab
-        self.export_settings = ExportSettingsFrame(export_frame)
-        self.export_settings.pack(fill=tk.BOTH, expand=True)
-
     def toggle_schematic_options(self):
         """Enable or disable schematic options based on checkbox."""
         if self.generate_schematic_var.get():
@@ -213,13 +246,25 @@ class DitherApp:
                 if isinstance(child, ttk.Entry) or isinstance(child, ttk.Combobox):
                     child.configure(state="disabled")
 
+    def _create_export_settings(self, parent):
+        """Create export settings section."""
+        export_frame = ttk.LabelFrame(parent, text="Export Settings", padding="10")
+        export_frame.pack(fill=tk.X, pady=5)
+
+        # Add export settings
+        self.export_settings = ExportSettingsFrame(export_frame)
+        self.export_settings.pack(fill=tk.BOTH, expand=True)
+
     def _create_action_buttons(self, parent):
         """Create action buttons."""
         btn_frame = ttk.Frame(parent)
-        btn_frame.pack(fill=tk.X, pady=20)
+        btn_frame.pack(fill=tk.X, pady=10)
 
         ttk.Button(btn_frame, text="Preview", command=self.preview_dithering).pack(
             side=tk.LEFT, padx=5
+        )
+        ttk.Button(btn_frame, text="Export", command=self.export_images).pack(
+            side=tk.RIGHT, padx=5
         )
         ttk.Button(
             btn_frame, text="Process and Save", command=self.process_and_save
@@ -231,14 +276,6 @@ class DitherApp:
         ttk.Label(
             parent, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W
         ).pack(side=tk.BOTTOM, fill=tk.X)
-
-    def _create_preview_area(self, parent):
-        """Create the preview area for image display."""
-        preview_frame = ttk.LabelFrame(parent, text="Preview", padding="10")
-        preview_frame.pack(fill=tk.BOTH, expand=True, pady=10)
-
-        self.canvas = tk.Canvas(preview_frame, bg="white")
-        self.canvas.pack(fill=tk.BOTH, expand=True)
 
     def browse_image(self):
         """Open file dialog to choose an image file."""
@@ -494,6 +531,84 @@ class DitherApp:
                             self.status_var.set(f"Error generating schematic: {e}")
                 except Exception as e:
                     self.status_var.set(f"Error saving image: {e}")
+
+    def export_images(self):
+        """Export images using current export settings."""
+        if self.dithered_img is None:
+            self.status_var.set(
+                "Error: No processed image to export. Please preview or process an image first."
+            )
+            return
+
+        # Get metadata for the current dithered image
+        # We need block_ids for rendering with block textures
+        algorithm_name = self.algorithm_var.get()
+        _, algorithm_id = get_algorithm_by_name(algorithm_name)
+
+        # Check if we have a processed image with block IDs
+        if not hasattr(self, "block_ids"):
+            # If not, we need to reprocess the image to get block IDs
+            self.status_var.set("Preparing image for export...")
+            self.root.update_idletasks()
+
+            # Apply dithering to get block IDs
+            _, _, metadata_info = self.apply_dithering(self.resized_img)
+            if metadata_info and "block_ids" in metadata_info:
+                self.block_ids = metadata_info["block_ids"]
+            else:
+                self.status_var.set("Error: Unable to generate block IDs for export.")
+                return
+
+        # Export with textures using the export settings
+        export_settings = self.export_settings.get_export_settings()
+        if any(export_settings["export_types"]):
+            try:
+                self.status_var.set("Rendering blocks with textures...")
+                self.root.update_idletasks()
+
+                # Render blocks with textures
+                block_image = render_blocks_from_block_ids(self.block_ids)
+
+                if block_image:
+                    self.status_var.set("Exporting images...")
+                    self.root.update_idletasks()
+
+                    # Get base name for export
+                    if self.img_path_var.get():
+                        base_name = os.path.splitext(
+                            os.path.basename(self.img_path_var.get())
+                        )[0]
+                    else:
+                        base_name = f"pixeletica_export_{algorithm_id}"
+
+                    # Apply version options from line settings
+                    version_options = export_settings["version_options"]
+
+                    # Export with the configured settings
+                    export_results = export_processed_image(
+                        block_image,
+                        base_name,
+                        export_types=export_settings["export_types"],
+                        origin_x=export_settings["origin_x"],
+                        origin_z=export_settings["origin_z"],
+                        draw_chunk_lines=export_settings["draw_chunk_lines"],
+                        chunk_line_color=export_settings["chunk_line_color"],
+                        draw_block_lines=export_settings["draw_block_lines"],
+                        block_line_color=export_settings["block_line_color"],
+                        split_count=export_settings["split_count"],
+                        version_options=version_options,
+                        algorithm_name=algorithm_id,
+                    )
+
+                    self.status_var.set(
+                        f"Export successful! Files saved to: {export_results['export_dir']}"
+                    )
+                else:
+                    self.status_var.set("Error: Failed to render blocks with textures")
+            except Exception as e:
+                self.status_var.set(f"Error during export: {e}")
+        else:
+            self.status_var.set("Error: No export types selected in Export Settings")
 
     def display_image(self, img):
         """Display an image in the preview area."""
