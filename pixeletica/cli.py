@@ -120,6 +120,150 @@ def run_cli():
         print(f"Success! Dithered image saved to: {output_path}")
         print(f"Processing took {processing_time:.2f} seconds")
 
+        # Ask if the user wants to export the image with textures
+        print("\nDo you want to export the image with Minecraft textures? (y/n)")
+        export_image = input().strip().lower() == "y"
+
+        if export_image:
+            # Get export options
+            print("\n--- Image Export Options ---")
+
+            # Coordinate settings
+            print("\n--- Coordinate Settings ---")
+            print(
+                "Enter the starting coordinates in the Minecraft world (Leave empty for 0,0)"
+            )
+            origin_x_input = input("Origin X: ").strip()
+            origin_z_input = input("Origin Z: ").strip()
+
+            origin_x = int(origin_x_input) if origin_x_input else 0
+            origin_z = int(origin_z_input) if origin_z_input else 0
+
+            print("\n--- Line Rendering Options ---")
+            print("Do you want to include chunk lines? (y/n)")
+            draw_chunk_lines = input().strip().lower() == "y"
+
+            chunk_line_color = "FF0000FF"  # Default: Red
+            if draw_chunk_lines:
+                print(
+                    "Chunk line color [FF0000FF] (RRGGBBAA format, leave empty for default): "
+                )
+                color_input = input().strip()
+                if color_input:
+                    chunk_line_color = color_input
+
+            print("Do you want to include block grid lines? (y/n)")
+            draw_block_lines = input().strip().lower() == "y"
+
+            block_line_color = "CCCCCC88"  # Default: Light gray
+            if draw_block_lines:
+                print(
+                    "Block line color [CCCCCC88] (RRGGBBAA format, leave empty for default): "
+                )
+                color_input = input().strip()
+                if color_input:
+                    block_line_color = color_input
+
+            print("\n--- Export Types ---")
+            print("Select export types (you can choose multiple):")
+            print("1. Web-optimized tiles (512×512)")
+            print("2. Single large image")
+            print("3. Split into multiple parts")
+
+            export_types = []
+
+            web_export = input("Export as web tiles? (y/n): ").strip().lower() == "y"
+            if web_export:
+                export_types.append("web")
+
+            large_export = (
+                input("Export as single large image? (y/n): ").strip().lower() == "y"
+            )
+            if large_export:
+                export_types.append("large")
+
+            split_export = (
+                input("Export as split parts? (y/n): ").strip().lower() == "y"
+            )
+            if split_export:
+                export_types.append("split")
+                print("Number of parts to split into [4]: ")
+                split_count_input = input().strip()
+                split_count = int(split_count_input) if split_count_input else 4
+            else:
+                split_count = 4
+
+            print("\n--- Line Version Options ---")
+            print("Which versions would you like to export?")
+            with_lines = input("Version with lines? (y/n): ").strip().lower() == "y"
+            without_lines = (
+                input("Version without lines? (y/n): ").strip().lower() == "y"
+            )
+
+            if not with_lines and not without_lines:
+                print(
+                    "You must select at least one version. Using 'with lines' by default."
+                )
+                with_lines = True
+
+            # Render blocks with textures
+            from pixeletica.rendering.block_renderer import render_blocks_from_block_ids
+
+            print("Rendering blocks with textures...")
+            block_image = render_blocks_from_block_ids(block_ids)
+
+            if block_image:
+                # Export the images
+                from pixeletica.export.export_manager import export_processed_image
+
+                print("Exporting images...")
+                try:
+                    export_results = export_processed_image(
+                        block_image,
+                        os.path.splitext(os.path.basename(image_path))[0],
+                        export_types=export_types,
+                        origin_x=origin_x,
+                        origin_z=origin_z,
+                        draw_chunk_lines=draw_chunk_lines,
+                        chunk_line_color=chunk_line_color,
+                        draw_block_lines=draw_block_lines,
+                        block_line_color=block_line_color,
+                        split_count=split_count,
+                        include_lines_version=with_lines,
+                        include_no_lines_version=without_lines,
+                        algorithm_name=algorithm_id,
+                    )
+
+                    print(
+                        f"\nExport successful! Files saved to: {export_results['export_dir']}"
+                    )
+
+                    # Update metadata with export information
+                    metadata_path = os.path.splitext(output_path)[0] + ".json"
+                    if os.path.exists(metadata_path):
+                        from pixeletica.metadata import (
+                            load_metadata_json,
+                            save_metadata_json,
+                        )
+
+                        metadata = load_metadata_json(metadata_path)
+                        metadata["export_settings"] = {
+                            "origin_x": origin_x,
+                            "origin_z": origin_z,
+                            "draw_chunk_lines": draw_chunk_lines,
+                            "chunk_line_color": chunk_line_color,
+                            "draw_block_lines": draw_block_lines,
+                            "block_line_color": block_line_color,
+                            "export_types": export_types,
+                            "split_count": split_count,
+                        }
+                        metadata["exports"] = export_results
+                        save_metadata_json(metadata, output_path)
+                except Exception as e:
+                    print(f"Error during export: {e}")
+            else:
+                print("Error: Failed to render blocks with textures")
+
         # Ask if the user wants to generate a schematic
         print("\nDo you want to generate a Litematica schematic? (y/n)")
         generate_schematic = input().strip().lower() == "y"

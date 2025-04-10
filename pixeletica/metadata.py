@@ -19,6 +19,10 @@ def create_metadata(
     processing_time,
     block_data,
     palette_name="Gomme r/place color map",
+    origin_x=0,
+    origin_z=0,
+    export_settings=None,
+    exported_files=None,
 ):
     """
     Create metadata for a processed image.
@@ -32,6 +36,10 @@ def create_metadata(
         processing_time: Time taken to process in seconds
         block_data: Array of block IDs used for each pixel
         palette_name: Name of the block palette used
+        origin_x: X-coordinate of the world origin
+        origin_z: Z-coordinate of the world origin
+        export_settings: Dictionary of export settings (optional)
+        exported_files: Dictionary of exported file paths (optional)
 
     Returns:
         Dictionary containing the metadata
@@ -43,6 +51,11 @@ def create_metadata(
     # Convert 2D array to run-length encoding for space efficiency
     compressed_blocks = compress_block_data(block_data)
 
+    # Calculate coordinate information
+    from pixeletica.coordinates.chunk_calculator import calculate_image_offset
+
+    coordinates = calculate_image_offset(origin_x, origin_z)
+
     metadata = {
         "original_image": original_filename,
         "output_image": output_filename,
@@ -52,7 +65,16 @@ def create_metadata(
         "timestamp": datetime.datetime.now().isoformat(),
         "block_palette": {"name": palette_name, "source": "minecraft/block-colors.csv"},
         "blocks": compressed_blocks,
+        "coordinates": coordinates,
     }
+
+    # Add export settings if provided
+    if export_settings:
+        metadata["export_settings"] = export_settings
+
+    # Add exported files if provided
+    if exported_files:
+        metadata["exported_files"] = exported_files
 
     return metadata
 

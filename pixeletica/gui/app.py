@@ -10,6 +10,9 @@ from PIL import Image, ImageTk
 from pixeletica.block_utils.block_loader import load_block_colors, get_block_colors
 from pixeletica.dithering import get_algorithm_by_name
 from pixeletica.image_ops import load_image, resize_image, save_dithered_image
+from pixeletica.gui.export_settings import ExportSettingsFrame
+from pixeletica.rendering.block_renderer import render_blocks_from_block_ids
+from pixeletica.export.export_manager import export_processed_image
 
 
 class DitherApp:
@@ -134,11 +137,19 @@ class DitherApp:
 
     def _create_schematic_options(self, parent):
         """Create options for Litematica schematic generation."""
-        schematic_frame = ttk.LabelFrame(
-            parent, text="Litematica Schematic", padding="10"
-        )
-        schematic_frame.pack(fill=tk.X, pady=10)
+        # Create a notebook with tabs for different options
+        notebook = ttk.Notebook(parent)
+        notebook.pack(fill=tk.X, pady=10)
 
+        # Tab for schematic options
+        schematic_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(schematic_frame, text="Schematic")
+
+        # Tab for export options
+        export_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(export_frame, text="Export Settings")
+
+        # Add schematic options
         # Option to enable/disable schematic generation
         self.generate_schematic_var = tk.BooleanVar(value=False)
         self.generate_schematic_checkbox = ttk.Checkbutton(
@@ -187,6 +198,10 @@ class DitherApp:
 
         # Initially disable the schematic options
         self.toggle_schematic_options()
+
+        # Add export settings to the export tab
+        self.export_settings = ExportSettingsFrame(export_frame)
+        self.export_settings.pack(fill=tk.BOTH, expand=True)
 
     def toggle_schematic_options(self):
         """Enable or disable schematic options based on checkbox."""
@@ -371,6 +386,76 @@ class DitherApp:
                     )
                     self.dithered_img = dithered_img
                     self.display_image(dithered_img)
+
+                    # Export with textures if settings are available
+                    export_settings = self.export_settings.get_export_settings()
+                    if any(export_settings["export_types"]):
+                        try:
+                            self.status_var.set("Rendering blocks with textures...")
+                            self.root.update_idletasks()
+
+                            # Render blocks with textures
+                            block_image = render_blocks_from_block_ids(block_ids)
+
+                            if block_image:
+                                self.status_var.set("Exporting images...")
+                                self.root.update_idletasks()
+
+                                base_name = os.path.splitext(
+                                    os.path.basename(self.img_path_var.get())
+                                )[0]
+
+                                # Export with the configured settings
+                                export_results = export_processed_image(
+                                    block_image,
+                                    base_name,
+                                    export_types=export_settings["export_types"],
+                                    origin_x=export_settings["origin_x"],
+                                    origin_z=export_settings["origin_z"],
+                                    draw_chunk_lines=export_settings[
+                                        "draw_chunk_lines"
+                                    ],
+                                    chunk_line_color=export_settings[
+                                        "chunk_line_color"
+                                    ],
+                                    draw_block_lines=export_settings[
+                                        "draw_block_lines"
+                                    ],
+                                    block_line_color=export_settings[
+                                        "block_line_color"
+                                    ],
+                                    split_count=export_settings["split_count"],
+                                    include_lines_version=export_settings["with_lines"],
+                                    include_no_lines_version=export_settings[
+                                        "without_lines"
+                                    ],
+                                    algorithm_name=algorithm_name,
+                                )
+
+                                self.status_var.set(
+                                    f"Export successful! Files saved to: {export_results['export_dir']}"
+                                )
+
+                                # Update the original metadata with export information
+                                metadata_path = (
+                                    os.path.splitext(saved_path)[0] + ".json"
+                                )
+                                if os.path.exists(metadata_path):
+                                    from pixeletica.metadata import (
+                                        load_metadata_json,
+                                        save_metadata_json,
+                                    )
+
+                                    metadata = load_metadata_json(metadata_path)
+                                    metadata["export_settings"] = export_settings
+                                    metadata["exports"] = export_results
+                                    save_metadata_json(metadata, saved_path)
+                            else:
+                                self.status_var.set(
+                                    "Error: Failed to render blocks with textures"
+                                )
+                        except Exception as e:
+                            self.status_var.set(f"Error during export: {e}")
 
                     # Generate schematic if requested
                     if self.generate_schematic_var.get() and block_ids:
