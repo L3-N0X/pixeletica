@@ -2,6 +2,7 @@
 Command-line interface for Pixeletica.
 """
 
+import time
 from pixeletica.block_utils.block_loader import load_block_colors
 from pixeletica.dithering import get_algorithm_by_name
 from pixeletica.image_ops import load_image, resize_image, save_dithered_image
@@ -97,15 +98,26 @@ def run_cli():
     # Apply selected dithering algorithm
     try:
         print(f"Applying {algorithm_id} dithering...")
-        dithered_img = dither_func(resized_img)
+
+        # Track processing time
+        start_time = time.time()
+        dithered_img, block_ids = dither_func(resized_img)
+        processing_time = time.time() - start_time
 
         if not dithered_img:
             print("Error: Failed to apply dithering")
             return
 
-        # Save the dithered image
-        output_path = save_dithered_image(dithered_img, image_path, algorithm_id)
+        # Save the dithered image with metadata
+        output_path = save_dithered_image(
+            dithered_img,
+            image_path,
+            algorithm_id,
+            block_ids=block_ids,
+            processing_time=processing_time,
+        )
         print(f"Success! Dithered image saved to: {output_path}")
+        print(f"Processing took {processing_time:.2f} seconds")
 
     except Exception as e:
         print(f"Error applying dithering: {e}")

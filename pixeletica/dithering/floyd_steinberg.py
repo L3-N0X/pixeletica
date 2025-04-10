@@ -15,13 +15,18 @@ def apply_floyd_steinberg_dithering(img):
         img: PIL Image object
 
     Returns:
-        PIL Image object with dithered colors using Minecraft block colors
+        Tuple of:
+        - PIL Image object with dithered colors using Minecraft block colors
+        - 2D array of block IDs for each pixel
     """
     if img is None:
-        return None
+        return None, None
 
     width, height = img.size
     img = img.convert("RGB")
+
+    # Track block IDs for metadata
+    block_ids = [[None for _ in range(width)] for _ in range(height)]
 
     # Convert image to numpy array for faster processing
     pixels = np.array(img, dtype=float)
@@ -30,12 +35,16 @@ def apply_floyd_steinberg_dithering(img):
     for y in range(height):
         for x in range(width):
             old_pixel = pixels[y, x].copy()
-            closest_block = find_closest_block_color(tuple(map(int, old_pixel)))
+            closest_block, block_id = find_closest_block_color(
+                tuple(map(int, old_pixel))
+            )
 
             if closest_block is None:  # Fallback if no block found
                 new_pixel = np.array(old_pixel, dtype=int)
+                block_ids[y][x] = None
             else:
                 new_pixel = np.array(closest_block["rgb"])
+                block_ids[y][x] = block_id  # Store the block ID
 
             # Set the result pixel
             result[y, x] = new_pixel
@@ -55,4 +64,4 @@ def apply_floyd_steinberg_dithering(img):
 
     # Convert back to PIL Image
     result_img = Image.fromarray(np.uint8(result))
-    return result_img
+    return result_img, block_ids

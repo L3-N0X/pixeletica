@@ -214,7 +214,7 @@ class DitherApp:
     def apply_dithering(self, img):
         """Apply selected dithering algorithm to the image."""
         if img is None:
-            return None, None
+            return None, None, None
 
         algorithm_name = self.algorithm_var.get()
 
@@ -222,14 +222,24 @@ class DitherApp:
 
         if dither_func is None:
             self.status_var.set(f"Unknown algorithm: {algorithm_name}")
-            return None, None
+            return None, None, None
 
         try:
-            result_img = dither_func(img)
-            return result_img, algorithm_id
+            # Track processing time
+            import time
+
+            start_time = time.time()
+            result_img, block_ids = dither_func(img)
+            processing_time = time.time() - start_time
+
+            return (
+                result_img,
+                algorithm_id,
+                {"block_ids": block_ids, "processing_time": processing_time},
+            )
         except Exception as e:
             self.status_var.set(f"Error applying dithering: {e}")
-            return None, None
+            return None, None, None
 
     def preview_dithering(self):
         """Generate and display a preview of the dithered image."""
@@ -238,11 +248,21 @@ class DitherApp:
             self.status_var.set("Applying dithering for preview...")
             self.root.update_idletasks()
 
-            dithered_img, algorithm_name = self.apply_dithering(resized_img)
+            dithered_img, algorithm_name, metadata_info = self.apply_dithering(
+                resized_img
+            )
             if dithered_img:
                 self.dithered_img = dithered_img
                 self.display_image(dithered_img)
-                self.status_var.set(f"Preview: {algorithm_name} dithering")
+
+                # Show processing time in status
+                if metadata_info and "processing_time" in metadata_info:
+                    processing_time = metadata_info["processing_time"]
+                    self.status_var.set(
+                        f"Preview: {algorithm_name} dithering - Processing time: {processing_time:.2f}s"
+                    )
+                else:
+                    self.status_var.set(f"Preview: {algorithm_name} dithering")
             else:
                 self.status_var.set("Failed to apply dithering algorithm")
 
@@ -259,14 +279,29 @@ class DitherApp:
             self.status_var.set("Applying dithering...")
             self.root.update_idletasks()
 
-            dithered_img, algorithm_name = self.apply_dithering(resized_img)
+            dithered_img, algorithm_name, metadata_info = self.apply_dithering(
+                resized_img
+            )
             if dithered_img:
-                # Save the dithered image
+                # Save the dithered image with metadata
                 try:
-                    saved_path = save_dithered_image(
-                        dithered_img, self.img_path_var.get(), algorithm_name
+                    block_ids = (
+                        metadata_info.get("block_ids") if metadata_info else None
                     )
-                    self.status_var.set(f"Saved: {saved_path}")
+                    processing_time = (
+                        metadata_info.get("processing_time", 0) if metadata_info else 0
+                    )
+
+                    saved_path = save_dithered_image(
+                        dithered_img,
+                        self.img_path_var.get(),
+                        algorithm_name,
+                        block_ids=block_ids,
+                        processing_time=processing_time,
+                    )
+                    self.status_var.set(
+                        f"Saved: {saved_path} (processing time: {processing_time:.2f}s)"
+                    )
                     self.dithered_img = dithered_img
                     self.display_image(dithered_img)
                 except Exception as e:

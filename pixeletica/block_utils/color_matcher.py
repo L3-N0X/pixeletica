@@ -6,7 +6,15 @@ from pixeletica.block_utils.block_loader import get_block_colors
 
 
 def find_closest_block_color(pixel_color):
-    """Find the Minecraft block color closest to the given RGB color."""
+    """
+    Find the Minecraft block color closest to the given RGB color.
+
+    Args:
+        pixel_color: RGB tuple
+
+    Returns:
+        Tuple of (closest_block, block_id) where block_id is the Minecraft block ID
+    """
     block_colors = get_block_colors()
 
     if not block_colors:
@@ -25,4 +33,5 @@ def find_closest_block_color(pixel_color):
             min_distance = distance
             closest_block = block
 
-    return closest_block
+    # Return the block details and the block_id
+    return closest_block, closest_block["id"] if closest_block else None
