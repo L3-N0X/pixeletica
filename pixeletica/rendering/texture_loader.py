@@ -7,11 +7,12 @@ texture pack and associating them with the appropriate blocks.
 
 import os
 import json
+import re
 from PIL import Image
 from functools import lru_cache
 
 # Default texture path
-DEFAULT_TEXTURE_PATH = "./minecraft/texturepack/minecraft/textures/blocks"
+DEFAULT_TEXTURE_PATH = "./minecraft/texturepack/minecraft/textures/block"
 
 
 class TextureManager:
@@ -56,21 +57,19 @@ class TextureManager:
             # Add more blocks as needed
         }
 
-        # You could also load this from a JSON file
-        mapping_file = os.path.join(
-            os.path.dirname(__file__), "block_texture_mapping.json"
-        )
+        # Load block texture mapping from JSON file
+        mapping_file = "minecraft/block_texture_mapping.json"
         if os.path.exists(mapping_file):
             try:
                 with open(mapping_file, "r") as f:
-                    self.block_mapping.update(json.load(f))
+                    self.block_mapping = json.load(f)
             except Exception as e:
                 print(f"Error loading block texture mapping: {e}")
 
     @lru_cache(maxsize=128)
     def _load_texture(self, texture_name):
         """
-        Load a texture from the texture pack.
+        Load a texture from the texture pack and handle animations.
 
         Args:
             texture_name: Filename of the texture
@@ -81,7 +80,11 @@ class TextureManager:
         texture_path = os.path.join(self.texture_path, texture_name)
         try:
             if os.path.exists(texture_path):
-                return Image.open(texture_path).convert("RGBA")
+                image = Image.open(texture_path).convert("RGBA")
+                if image.height > 16:
+                    # Crop to first frame (16x16) for animated textures
+                    image = image.crop((0, 0, 16, 16))
+                return image
             else:
                 print(f"Texture not found: {texture_path}")
                 return None
@@ -100,33 +103,46 @@ class TextureManager:
         Returns:
             PIL Image object of the block texture or None if not found
         """
-        # Check if we already have this texture in cache
+        # Check cache
         cache_key = f"{block_id}:{face}"
         if cache_key in self.texture_cache:
             return self.texture_cache[cache_key]
 
-        # Get the texture filename for this block
+        texture_name = None
         texture_info = self.block_mapping.get(block_id)
-        if texture_info is None:
-            # If not found in mapping, try using the block ID as the texture name
-            texture_name = block_id.split(":")[-1] + ".png"
-        elif isinstance(texture_info, dict):
-            # If we have different textures for different faces
-            texture_name = texture_info.get(face, texture_info.get("side", None))
-            if texture_name is None:
-                # No specific texture for this face
-                return None
+
+        if texture_info:
+            if isinstance(texture_info, dict):
+                texture_name = texture_info.get(face)
+                if not texture_name:
+                    texture_name = texture_info.get("side")
+            else:
+                texture_name = texture_info
+
+        if not texture_name:
+            # Regex-based matching and prioritize "_top" textures
+            block_name = block_id.split(":")[-1]
+            base_texture_name = f"{block_name}.png"
+            top_texture_name = f"{block_name}_top.png"
+
+            if os.path.exists(os.path.join(self.texture_path, top_texture_name)):
+                texture_name = top_texture_name
+            elif os.path.exists(os.path.join(self.texture_path, base_texture_name)):
+                texture_name = base_texture_name
+            else:
+                # Fallback: try to find any texture matching block name using regex
+                regex = re.compile(f"{block_name}(|_\\w+)?\\.png$")
+                for filename in os.listdir(self.texture_path):
+                    if regex.match(filename):
+                        texture_name = filename
+                        break
+
+        if texture_name:
+            texture = self._load_texture(texture_name)
+            self.texture_cache[cache_key] = texture
+            return texture
         else:
-            # Same texture for all faces
-            texture_name = texture_info
-
-        # Load the texture
-        texture = self._load_texture(texture_name)
-
-        # Cache it for future use
-        self.texture_cache[cache_key] = texture
-
-        return texture
+            return None
 
     def clear_cache(self):
         """Clear the texture cache."""

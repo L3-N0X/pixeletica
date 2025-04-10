@@ -1,0 +1,155 @@
+{
+  "tile_size": 512,
+  "width": 2048,
+  "height": 2048,
+  "tiles_x": 4,
+  "tiles_z": 4,
+  "origin_x": -12,
+  "origin_z": -12,
+  "tiles": [
+    {
+      "filename": "tile_x-12_z-12.png",
+      "x": 0,
+      "z": 0,
+      "world_x": -12,
+      "world_z": -12,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "filename": "tile_x500_z-12.png",
+      "x": 1,
+      "z": 0,
+      "world_x": 500,
+      "world_z": -12,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "filename": "tile_x1012_z-12.png",
+      "x": 2,
+      "z": 0,
+      "world_x": 1012,
+      "world_z": -12,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "filename": "tile_x1524_z-12.png",
+      "x": 3,
+      "z": 0,
+      "world_x": 1524,
+      "world_z": -12,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "filename": "tile_x-12_z500.png",
+      "x": 0,
+      "z": 1,
+      "world_x": -12,
+      "world_z": 500,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "filename": "tile_x500_z500.png",
+      "x": 1,
+      "z": 1,
+      "world_x": 500,
+      "world_z": 500,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "filename": "tile_x1012_z500.png",
+      "x": 2,
+      "z": 1,
+      "world_x": 1012,
+      "world_z": 500,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "filename": "tile_x1524_z500.png",
+      "x": 3,
+      "z": 1,
+      "world_x": 1524,
+      "world_z": 500,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "filename": "tile_x-12_z1012.png",
+      "x": 0,
+      "z": 2,
+      "world_x": -12,
+      "world_z": 1012,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "filename": "tile_x500_z1012.png",
+      "x": 1,
+      "z": 2,
+      "world_x": 500,
+      "world_z": 1012,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "filename": "tile_x1012_z1012.png",
+      "x": 2,
+      "z": 2,
+      "world_x": 1012,
+      "world_z": 1012,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "filename": "tile_x1524_z1012.png",
+      "x": 3,
+      "z": 2,
+      "world_x": 1524,
+      "world_z": 1012,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "filename": "tile_x-12_z1524.png",
+      "x": 0,
+      "z": 3,
+      "world_x": -12,
+      "world_z": 1524,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "filename": "tile_x500_z1524.png",
+      "x": 1,
+      "z": 3,
+      "world_x": 500,
+      "world_z": 1524,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "filename": "tile_x1012_z1524.png",
+      "x": 2,
+      "z": 3,
+      "world_x": 1012,
+      "world_z": 1524,
+      "width": 512,
+      "height": 512
+    },
+    {
+      "filename": "tile_x1524_z1524.png",
+      "x": 3,
+      "z": 3,
+      "world_x": 1524,
+      "world_z": 1524,
+      "width": 512,
+      "height": 512
+    }
+  ]
+}

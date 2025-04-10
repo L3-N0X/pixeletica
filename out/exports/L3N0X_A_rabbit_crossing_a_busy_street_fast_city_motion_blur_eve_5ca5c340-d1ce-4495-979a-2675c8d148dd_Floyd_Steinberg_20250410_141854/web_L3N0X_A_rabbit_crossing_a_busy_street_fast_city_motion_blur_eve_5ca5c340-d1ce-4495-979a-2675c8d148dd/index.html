@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Minecraft Map Viewer</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            background: #222;
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        .map-container {
+            position: relative;
+            width: 2048px;
+            height: 2048px;
+            overflow: auto;
+            border: 1px solid #333;
+            background: #000;
+        }
+        .map {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 2048px;
+            height: 2048px;
+        }
+        .tile {
+            position: absolute;
+            image-rendering: pixelated;
+        }
+        .info {
+            margin-top: 20px;
+            padding: 10px;
+            background: #333;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Minecraft Map Viewer</h1>
+        <div class="map-container">
+            <div class="map" id="map"></div>
+        </div>
+        <div class="info">
+            <p>Map Size: 2048×2048 pixels</p>
+            <p>Tiles: 4×4</p>
+            <p>Origin: (-12, -12)</p>
+        </div>
+    </div>
+
+    <script>
+        const mapElement = document.getElementById('map');
+        const tilesInfo = [{"filename": "tile_x-12_z-12.png", "x": 0, "z": 0, "world_x": -12, "world_z": -12, "width": 512, "height": 512}, {"filename": "tile_x500_z-12.png", "x": 1, "z": 0, "world_x": 500, "world_z": -12, "width": 512, "height": 512}, {"filename": "tile_x1012_z-12.png", "x": 2, "z": 0, "world_x": 1012, "world_z": -12, "width": 512, "height": 512}, {"filename": "tile_x1524_z-12.png", "x": 3, "z": 0, "world_x": 1524, "world_z": -12, "width": 512, "height": 512}, {"filename": "tile_x-12_z500.png", "x": 0, "z": 1, "world_x": -12, "world_z": 500, "width": 512, "height": 512}, {"filename": "tile_x500_z500.png", "x": 1, "z": 1, "world_x": 500, "world_z": 500, "width": 512, "height": 512}, {"filename": "tile_x1012_z500.png", "x": 2, "z": 1, "world_x": 1012, "world_z": 500, "width": 512, "height": 512}, {"filename": "tile_x1524_z500.png", "x": 3, "z": 1, "world_x": 1524, "world_z": 500, "width": 512, "height": 512}, {"filename": "tile_x-12_z1012.png", "x": 0, "z": 2, "world_x": -12, "world_z": 1012, "width": 512, "height": 512}, {"filename": "tile_x500_z1012.png", "x": 1, "z": 2, "world_x": 500, "world_z": 1012, "width": 512, "height": 512}, {"filename": "tile_x1012_z1012.png", "x": 2, "z": 2, "world_x": 1012, "world_z": 1012, "width": 512, "height": 512}, {"filename": "tile_x1524_z1012.png", "x": 3, "z": 2, "world_x": 1524, "world_z": 1012, "width": 512, "height": 512}, {"filename": "tile_x-12_z1524.png", "x": 0, "z": 3, "world_x": -12, "world_z": 1524, "width": 512, "height": 512}, {"filename": "tile_x500_z1524.png", "x": 1, "z": 3, "world_x": 500, "world_z": 1524, "width": 512, "height": 512}, {"filename": "tile_x1012_z1524.png", "x": 2, "z": 3, "world_x": 1012, "world_z": 1524, "width": 512, "height": 512}, {"filename": "tile_x1524_z1524.png", "x": 3, "z": 3, "world_x": 1524, "world_z": 1524, "width": 512, "height": 512}];
+        
+        // Add tiles to the map
+        tilesInfo.forEach(tile => {
+            const tileElement = document.createElement('img');
+            tileElement.src = tile.filename;
+            tileElement.className = 'tile';
+            tileElement.style.left = (tile.x * 512) + 'px';
+            tileElement.style.top = (tile.z * 512) + 'px';
+            tileElement.style.width = tile.width + 'px';
+            tileElement.style.height = tile.height + 'px';
+            mapElement.appendChild(tileElement);
+        });
+    </script>
+</body>
+</html>

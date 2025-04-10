@@ -13,8 +13,8 @@ from pixeletica.coordinates.chunk_calculator import (
 )
 
 # Default colors
-DEFAULT_CHUNK_LINE_COLOR = "FF0000FF"  # Red with full alpha
-DEFAULT_BLOCK_LINE_COLOR = "CCCCCC88"  # Light gray with partial opacity
+DEFAULT_CHUNK_LINE_COLOR = "#FF0000FF"  # Red with full alpha
+DEFAULT_BLOCK_LINE_COLOR = "#CCCCCC88"  # Light gray with partial opacity
 
 
 def hex_to_rgba(hex_color):

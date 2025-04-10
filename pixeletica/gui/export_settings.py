@@ -152,54 +152,80 @@ class ExportSettingsFrame(ttk.LabelFrame):
         ttk.Label(split_frame, text="equal parts").pack(side=tk.LEFT)
 
     def create_line_version_settings(self):
-        """Create line version settings UI."""
+        """Create line version settings UI with options for different line versions."""
         versions_frame = ttk.LabelFrame(self, text="Version Options", padding="5")
         versions_frame.pack(fill=tk.X, pady=5)
 
+        self.no_lines_var = tk.BooleanVar(value=False)
+        self.only_block_lines_var = tk.BooleanVar(value=False)
+        self.only_chunk_lines_var = tk.BooleanVar(value=False)
+        self.both_lines_var = tk.BooleanVar(value=True)  # Default to both lines
+
         ttk.Checkbutton(
             versions_frame,
-            text="Include version with lines",
-            variable=self.with_lines_var,
+            text="No lines",
+            variable=self.no_lines_var,
         ).pack(anchor=tk.W, padx=5, pady=2)
 
         ttk.Checkbutton(
             versions_frame,
-            text="Include version without lines",
-            variable=self.without_lines_var,
+            text="Only block lines",
+            variable=self.only_block_lines_var,
+        ).pack(anchor=tk.W, padx=5, pady=2)
+
+        ttk.Checkbutton(
+            versions_frame,
+            text="Only chunk lines",
+            variable=self.only_chunk_lines_var,
+        ).pack(anchor=tk.W, padx=5, pady=2)
+
+        ttk.Checkbutton(
+            versions_frame,
+            text="Both lines (block and chunk)",
+            variable=self.both_lines_var,
         ).pack(anchor=tk.W, padx=5, pady=2)
 
     def select_color(self, line_type):
-        """Open a color chooser dialog and update the selected color."""
+        """Open a color chooser dialog and update the selected color, including alpha."""
         current_color = (
             self.chunk_line_color if line_type == "chunk" else self.block_line_color
         )
         rgb_color = self._hex_to_rgb(current_color)
 
-        # Open color chooser
+        # Open color chooser with alpha support
         color = colorchooser.askcolor(
-            initialcolor=rgb_color, title=f"Select {line_type.capitalize()} Line Color"
+            initialcolor=rgb_color,
+            title=f"Select {line_type.capitalize()} Line Color",
+            color=rgb_color,  # Initial color for the dialog
         )
 
         if color[1]:  # If a color was selected (not cancelled)
-            hex_color = color[1].lstrip("#")
-            # Add alpha component if not present
-            if len(hex_color) == 6:
-                if line_type == "chunk":
-                    hex_color += "FF"  # Full opacity for chunk lines
-                else:
-                    hex_color += "88"  # Partial opacity for block lines
+            hex_color = color[1]
+            if hex_color:
+                hex_color = hex_color.lstrip("#")
+                # Ensure it's 8 characters long (RGBA)
+                if len(hex_color) == 6:
+                    hex_color += "ff"  # Default alpha to opaque if not provided
 
-            # Update the color
-            if line_type == "chunk":
-                self.chunk_line_color = hex_color
-                self.chunk_color_preview.config(bg=self._hex_to_rgb(hex_color))
-            else:
-                self.block_line_color = hex_color
-                self.block_color_preview.config(bg=self._hex_to_rgb(hex_color))
+                # Update the color and preview
+                if line_type == "chunk":
+                    self.chunk_line_color = "#" + hex_color
+                    self.chunk_color_preview.config(
+                        bg=self._hex_to_rgb("#" + hex_color)
+                    )
+                else:
+                    self.block_line_color = "#" + hex_color
+                    self.block_color_preview.config(
+                        bg=self._hex_to_rgb("#" + hex_color)
+                    )
 
     def _hex_to_rgb(self, hex_color):
-        """Convert hex color to RGB format for Tkinter."""
+        """Convert hex color to RGB format for Tkinter, ignoring alpha."""
         hex_color = hex_color.lstrip("#")
+
+        # If alpha is present, ignore it for Tkinter color preview
+        if len(hex_color) == 8:
+            hex_color = hex_color[:6]
 
         r = int(hex_color[0:2], 16)
         g = int(hex_color[2:4], 16)
@@ -226,8 +252,18 @@ class ExportSettingsFrame(ttk.LabelFrame):
         with_lines = self.with_lines_var.get()
         without_lines = self.without_lines_var.get()
 
-        if not with_lines and not without_lines:
-            with_lines = True
+        version_options = {
+            "no_lines": self.no_lines_var.get(),
+            "only_block_lines": self.only_block_lines_var.get(),
+            "only_chunk_lines": self.only_chunk_lines_var.get(),
+            "both_lines": self.both_lines_var.get(),
+        }
+
+        # Ensure at least one version is selected
+        if not any(version_options.values()):
+            version_options["both_lines"] = (
+                True  # Default to both lines if none selected
+            )
 
         return {
             "origin_x": self.origin_x_var.get(),
@@ -238,6 +274,5 @@ class ExportSettingsFrame(ttk.LabelFrame):
             "block_line_color": self.block_line_color,
             "export_types": export_types,
             "split_count": self.split_count_var.get(),
-            "with_lines": with_lines,
-            "without_lines": without_lines,
+            "version_options": version_options,
         }

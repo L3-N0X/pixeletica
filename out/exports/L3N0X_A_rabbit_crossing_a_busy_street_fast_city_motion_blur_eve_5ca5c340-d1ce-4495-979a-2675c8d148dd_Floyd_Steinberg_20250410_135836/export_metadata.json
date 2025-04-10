@@ -1,0 +1,187 @@
+{
+  "export_dir": "./out\\exports\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_Floyd_Steinberg_20250410_135836",
+  "timestamp": "20250410_135836",
+  "coordinates": {
+    "origin_x": 23,
+    "origin_z": -139,
+    "chunk_x": 1,
+    "chunk_z": -9,
+    "offset_x": 7,
+    "offset_z": 5
+  },
+  "exports": {
+    "web": {
+      "tile_size": 512,
+      "width": 2048,
+      "height": 2048,
+      "tiles_x": 4,
+      "tiles_z": 4,
+      "origin_x": 23,
+      "origin_z": -139,
+      "tiles": [
+        {
+          "filename": "tile_x23_z-139.png",
+          "x": 0,
+          "z": 0,
+          "world_x": 23,
+          "world_z": -139,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "filename": "tile_x535_z-139.png",
+          "x": 1,
+          "z": 0,
+          "world_x": 535,
+          "world_z": -139,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "filename": "tile_x1047_z-139.png",
+          "x": 2,
+          "z": 0,
+          "world_x": 1047,
+          "world_z": -139,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "filename": "tile_x1559_z-139.png",
+          "x": 3,
+          "z": 0,
+          "world_x": 1559,
+          "world_z": -139,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "filename": "tile_x23_z373.png",
+          "x": 0,
+          "z": 1,
+          "world_x": 23,
+          "world_z": 373,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "filename": "tile_x535_z373.png",
+          "x": 1,
+          "z": 1,
+          "world_x": 535,
+          "world_z": 373,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "filename": "tile_x1047_z373.png",
+          "x": 2,
+          "z": 1,
+          "world_x": 1047,
+          "world_z": 373,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "filename": "tile_x1559_z373.png",
+          "x": 3,
+          "z": 1,
+          "world_x": 1559,
+          "world_z": 373,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "filename": "tile_x23_z885.png",
+          "x": 0,
+          "z": 2,
+          "world_x": 23,
+          "world_z": 885,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "filename": "tile_x535_z885.png",
+          "x": 1,
+          "z": 2,
+          "world_x": 535,
+          "world_z": 885,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "filename": "tile_x1047_z885.png",
+          "x": 2,
+          "z": 2,
+          "world_x": 1047,
+          "world_z": 885,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "filename": "tile_x1559_z885.png",
+          "x": 3,
+          "z": 2,
+          "world_x": 1559,
+          "world_z": 885,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "filename": "tile_x23_z1397.png",
+          "x": 0,
+          "z": 3,
+          "world_x": 23,
+          "world_z": 1397,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "filename": "tile_x535_z1397.png",
+          "x": 1,
+          "z": 3,
+          "world_x": 535,
+          "world_z": 1397,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "filename": "tile_x1047_z1397.png",
+          "x": 2,
+          "z": 3,
+          "world_x": 1047,
+          "world_z": 1397,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "filename": "tile_x1559_z1397.png",
+          "x": 3,
+          "z": 3,
+          "world_x": 1559,
+          "world_z": 1397,
+          "width": 512,
+          "height": 512
+        }
+      ]
+    },
+    "large": {
+      "no_lines": "./out\\exports\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_Floyd_Steinberg_20250410_135836\\large\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_no_lines.png",
+      "with_lines": "./out\\exports\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_Floyd_Steinberg_20250410_135836\\large\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_with_lines.png"
+    },
+    "split": {
+      "no_lines": [
+        "./out\\exports\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_Floyd_Steinberg_20250410_135836\\split_4\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_no_lines_part1_of_4.png",
+        "./out\\exports\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_Floyd_Steinberg_20250410_135836\\split_4\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_no_lines_part2_of_4.png",
+        "./out\\exports\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_Floyd_Steinberg_20250410_135836\\split_4\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_no_lines_part3_of_4.png",
+        "./out\\exports\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_Floyd_Steinberg_20250410_135836\\split_4\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_no_lines_part4_of_4.png"
+      ],
+      "with_lines": [
+        "./out\\exports\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_Floyd_Steinberg_20250410_135836\\split_4\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_with_lines_part1_of_4.png",
+        "./out\\exports\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_Floyd_Steinberg_20250410_135836\\split_4\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_with_lines_part2_of_4.png",
+        "./out\\exports\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_Floyd_Steinberg_20250410_135836\\split_4\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_with_lines_part3_of_4.png",
+        "./out\\exports\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_Floyd_Steinberg_20250410_135836\\split_4\\L3N0X_A_rabbit_crossing_a_busy_street_fast_city_motion_blur_eve_5ca5c340-d1ce-4495-979a-2675c8d148dd_with_lines_part4_of_4.png"
+      ]
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "minecraft:crafting_table": {
+    "texture": "block/crafting_table_top.png"
+  },
+  "minecraft:smithing_table": {
+    "texture": "block/smithing_table.png"
+  },
+  "minecraft:ancient_debris": {
+    "texture": "block/ancient_debris_top.png"
+  },
+  "minecraft:stripped_acacia_wood": {
+    "texture": "block/stripped_acacia_wood.png"
+  },
+  "minecraft:lodestone": {
+    "texture": "block/lodestone.png"
+  },
+  "minecraft:loom": {
+    "texture": "block/loom.png"
+  },
+  "minecraft:respawn_anchor": {
+    "texture": "block/respawn_anchor.png"
+  },
+  "minecraft:acacia_log": {
+    "texture": "block/acacia_log_top.png"
+  },
+  "minecraft:birch_log": {
+    "texture": "block/birch_log_top.png"
+  },
+  "minecraft:dark_oak_log": {
+    "texture": "block/dark_oak_log_top.png"
+  },
+  "minecraft:oak_log": {
+    "texture": "block/oak_log_top.png"
+  },
+  "minecraft:jungle_log": {
+    "texture": "block/jungle_log_top.png"
+  },
+  "minecraft:spruce_log": {
+    "texture": "block/spruce_log_top.png"
+  },
+  "minecraft:mangrove_log": {
+    "texture": "block/mangrove_log_top.png"
+  }
+}
