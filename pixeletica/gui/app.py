@@ -29,23 +29,52 @@ class DitherApp:
         root.title("Pixeletica Minecraft Dithering")
         root.geometry("1000x700")  # Increased window size
 
+        # Configure logging
+        import logging
+
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        )
+        self.logger = logging.getLogger("pixeletica")
+
+        # Log application start
+        self.logger.info("Application started")
+
         # Set dark theme
-        self.root.configure(bg="#121212")
+        self.root.configure(bg="#0a0a0a")
         style = ttk.Style()
         try:
             style.theme_use("clam")  # Use clam theme if available
             # Configure dark theme styles
-            style.configure("TFrame", background="#121212")
-            style.configure("TLabelframe", background="#121212", foreground="#ffffff")
+            style.configure("TFrame", background="#0a0a0a")
+            style.configure("TLabelframe", background="#0a0a0a", foreground="#ffffff")
             style.configure(
-                "TLabelframe.Label", background="#121212", foreground="#ffffff"
+                "TLabelframe.Label", background="#0a0a0a", foreground="#ffffff"
             )
-            style.configure("TLabel", background="#121212", foreground="#ffffff")
-            style.configure("TButton", background="#333333", foreground="#ffffff")
-            style.configure("TCheckbutton", background="#121212", foreground="#ffffff")
-            style.configure("TRadiobutton", background="#121212", foreground="#ffffff")
-            style.configure("TEntry", fieldbackground="#333333", foreground="#ffffff")
-            style.configure("TCanvas", background="#121212")
+            style.configure("TLabel", background="#0a0a0a", foreground="#ffffff")
+            style.configure("TButton", background="#1a1a1a", foreground="#ffffff")
+            style.configure("TCheckbutton", background="#0a0a0a", foreground="#ffffff")
+            style.configure("TRadiobutton", background="#0a0a0a", foreground="#ffffff")
+            style.configure("TEntry", fieldbackground="#1a1a1a", foreground="#ffffff")
+            style.configure("TCanvas", background="#0a0a0a")
+
+            # Additional styling for better visibility
+            style.map(
+                "TButton",
+                background=[("active", "#252525"), ("pressed", "#252525")],
+                foreground=[("active", "#ffffff")],
+            )
+            style.map(
+                "TCheckbutton",
+                background=[("active", "#252525")],
+                foreground=[("active", "#ffffff")],
+            )
+            style.map(
+                "TRadiobutton",
+                background=[("active", "#252525")],
+                foreground=[("active", "#ffffff")],
+            )
         except tk.TclError:
             # Fallback if theme not available
             pass
@@ -100,9 +129,12 @@ class DitherApp:
 
         # Create the preview canvas
         self.canvas = tk.Canvas(
-            preview_frame, bg="#1e1e1e"
-        )  # Dark background for preview
+            preview_frame, bg="#0d0d0d"
+        )  # Darker background for preview
         self.canvas.pack(fill=tk.BOTH, expand=True)
+
+        # Bind resize event to update image display when panel size changes
+        self.canvas.bind("<Configure>", self._on_canvas_resize)
 
         # Create the settings UI components in the left frame
         self._create_image_selection(settings_frame)
@@ -183,10 +215,6 @@ class DitherApp:
         self.algorithm_var = tk.StringVar(value="floyd_steinberg")
 
         # Create radio buttons for each algorithm
-        ttk.Radiobutton(
-            dither_frame, text="No Dithering", variable=self.algorithm_var, value="none"
-        ).pack(anchor=tk.W, pady=3)
-
         ttk.Radiobutton(
             dither_frame,
             text="Floyd-Steinberg",
@@ -637,42 +665,61 @@ class DitherApp:
         else:
             self.status_var.set("Error: No export types selected in Export Settings")
 
+    def _on_canvas_resize(self, event):
+        """Handle canvas resize events to update the displayed image."""
+        # Check if we need to redisplay the image
+        if hasattr(self, "dithered_img") and self.dithered_img is not None:
+            # Log the resize event
+            self.logger.info(f"Canvas resized to: {event.width}x{event.height}")
+            # Redisplay the current image to fit the new size
+            self.display_image(self.dithered_img)
+        elif hasattr(self, "original_img") and self.original_img is not None:
+            # If no dithered image, display the original
+            self.display_image(self.original_img)
+
     def display_image(self, img):
         """Display an image in the preview area."""
         if img is None:
             return
 
-        # Clear canvas
-        self.canvas.delete("all")
+        try:
+            # Clear canvas
+            self.canvas.delete("all")
 
-        # Resize image to fit canvas if needed
-        canvas_width = self.canvas.winfo_width()
-        canvas_height = self.canvas.winfo_height()
+            # Resize image to fit canvas if needed
+            canvas_width = self.canvas.winfo_width()
+            canvas_height = self.canvas.winfo_height()
 
-        if canvas_width <= 1:  # Canvas not yet realized
-            canvas_width = 400
-            canvas_height = 300
+            if canvas_width <= 1:  # Canvas not yet realized
+                canvas_width = 400
+                canvas_height = 300
 
-        img_width, img_height = img.size
+            img_width, img_height = img.size
 
-        # Calculate scale factor to fit image within canvas
-        scale_width = canvas_width / img_width if img_width > canvas_width else 1
-        scale_height = canvas_height / img_height if img_height > canvas_height else 1
-        scale = min(scale_width, scale_height)
+            # Calculate scale factor to fit image within canvas
+            scale_width = canvas_width / img_width if img_width > canvas_width else 1
+            scale_height = (
+                canvas_height / img_height if img_height > canvas_height else 1
+            )
+            scale = min(scale_width, scale_height)
 
-        # Resize image for display
-        if scale < 1:
-            display_width = int(img_width * scale)
-            display_height = int(img_height * scale)
-            display_img = img.resize((display_width, display_height), Image.LANCZOS)
-        else:
-            display_img = img.copy()
+            # Resize image for display - prioritize filling the width
+            if scale < 1:
+                display_width = int(img_width * scale)
+                display_height = int(img_height * scale)
+                display_img = img.resize((display_width, display_height), Image.LANCZOS)
+            else:
+                display_img = img.copy()
 
-        # Convert to PhotoImage and display
-        self.photo_img = ImageTk.PhotoImage(display_img)
-        self.canvas.create_image(
-            canvas_width // 2,
-            canvas_height // 2,
-            image=self.photo_img,
-            anchor=tk.CENTER,
-        )
+            # Convert to PhotoImage and display
+            self.photo_img = ImageTk.PhotoImage(display_img)
+            self.canvas.create_image(
+                canvas_width // 2,
+                canvas_height // 2,
+                image=self.photo_img,
+                anchor=tk.CENTER,
+            )
+        except Exception as e:
+            # Log any errors during image display
+            self.logger.error(f"Error displaying image: {e}")
+            self.status_var.set(f"Error displaying image: {e}")

@@ -43,20 +43,14 @@ def generate_schematic(block_ids, image_name, algorithm_name, metadata=None):
         "description", f"Generated from {base_name} using {algorithm_name}"
     )
 
-    # Create a new schematic
-    # The x,y,z parameters define the dimensions of the schematic
+    # Create a region with dimensions (origin at 0,0,0)
     # For a flat image, y=1 (height is always 1 block)
-    schematic = Schematic(width, 1, height)
+    region = Region(0, 0, 0, width, 1, height)
 
-    # Set schematic metadata
-    schematic.author = author
-    schematic.name = name
-    schematic.description = description
+    # Create schematic from the region
+    schematic = region.as_schematic(name=name, author=author, description=description)
 
-    # Add a region to the schematic (required by Litematica)
-    region = schematic.addRegion(name, (0, 0, 0))  # Start at origin
-
-    # Place blocks in the schematic
+    # Place blocks in the region
     for z in range(height):
         for x in range(width):
             block_id = block_ids[z][x]
@@ -64,7 +58,7 @@ def generate_schematic(block_ids, image_name, algorithm_name, metadata=None):
                 # Convert block ID to BlockState
                 # Using default orientation as specified
                 block_state = BlockState(block_id)
-                region.setBlock(x, 0, z, block_state)  # Y is always 0 (one layer high)
+                region[x, 0, z] = block_state  # Y is always 0 (one layer high)
 
     # Generate filename for schematic
     timestamp = time.strftime("%Y%m%d_%H%M%S")

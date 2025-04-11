@@ -44,20 +44,23 @@ def main():
     # Ensure output directory exists
     ensure_output_dir()
 
-    # Ask user which interface to use
-    print("1. Command Line Interface")
-    print("2. Graphical User Interface")
+    # Add support for --silent command line option
+    silent_mode = "--silent" in sys.argv
+    if silent_mode:
+        # Remove the argument so it doesn't interfere with other code
+        sys.argv.remove("--silent")
+        # Redirect stdout to null in silent mode
+        sys.stdout = open(os.devnull, "w")
 
     try:
-        choice = input("Select interface (1 or 2): ").strip()
-
-        if choice == "2":
-            run_gui()
-        else:
-            run_cli()
+        # Always run GUI by default
+        run_gui()
     except KeyboardInterrupt:
         print("\nExiting Pixeletica...")
     except Exception as e:
+        # Errors are always printed, even in silent mode
+        if silent_mode:
+            sys.stdout = sys.__stdout__  # Restore stdout
         print(f"An error occurred: {e}")
         print("Exiting Pixeletica...")
         sys.exit(1)

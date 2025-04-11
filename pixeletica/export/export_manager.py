@@ -214,17 +214,59 @@ def export_processed_image(
     include_no_lines_version=False,
     algorithm_name="",
     output_dir="./out",
+    version_options=None,
 ):
     """
     Convenience function for exporting processed images.
 
     Args:
         (Same as ExportManager.export_image)
+        version_options: Dictionary containing options for different versions of line rendering
+            - no_lines: Export version with no lines
+            - only_block_lines: Export version with only block grid lines
+            - only_chunk_lines: Export version with only chunk lines
+            - both_lines: Export version with both block and chunk lines
 
     Returns:
         Dictionary containing the export results
     """
     manager = ExportManager(output_dir=output_dir)
+
+    # Set line version options based on version_options if provided
+    if version_options:
+        # Handle no_lines option
+        if version_options.get("no_lines", False):
+            include_no_lines_version = True
+
+        # Handle line drawing options if any lines are requested
+        if (
+            version_options.get("only_block_lines", False)
+            or version_options.get("only_chunk_lines", False)
+            or version_options.get("both_lines", False)
+        ):
+            include_lines_version = True
+
+            # Set line drawing flags based on version options
+            if version_options.get("only_block_lines", False):
+                draw_block_lines = True
+                draw_chunk_lines = False
+            elif version_options.get("only_chunk_lines", False):
+                draw_chunk_lines = True
+                draw_block_lines = False
+            elif version_options.get("both_lines", False):
+                draw_block_lines = True
+                draw_chunk_lines = True
+
+    # Log the export settings
+    import logging
+
+    logging.info(
+        f"Exporting image with settings: draw_chunk_lines={draw_chunk_lines}, "
+        f"draw_block_lines={draw_block_lines}, "
+        f"include_lines_version={include_lines_version}, "
+        f"include_no_lines_version={include_no_lines_version}"
+    )
+
     return manager.export_image(
         image,
         base_name,

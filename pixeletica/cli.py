@@ -1,8 +1,12 @@
 """
 Command-line interface for Pixeletica.
+
+This module is kept as a fallback for debugging purposes only.
+The main interface is now GUI-based.
 """
 
 import os
+import sys
 import time
 from pixeletica.block_utils.block_loader import load_block_colors
 from pixeletica.dithering import get_algorithm_by_name
@@ -51,8 +55,15 @@ def resize_image_interactive(image_path):
 
 
 def run_cli():
-    """Run the command-line interface for Pixeletica."""
-    print("==== Pixeletica Minecraft Dithering ====")
+    """
+    Run the command-line interface for Pixeletica.
+
+    This function is kept as a fallback for debugging purposes.
+    The main application now uses GUI by default.
+    """
+    print("==== Pixeletica Minecraft Dithering (DEBUG MODE) ====")
+    print("Note: This CLI interface is maintained for debugging purposes only.")
+    print("For normal use, please use the GUI interface.\n")
 
     # Load block colors
     if not load_block_colors("./minecraft/block-colors.csv"):

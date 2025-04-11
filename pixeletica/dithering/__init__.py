@@ -8,7 +8,6 @@ from pixeletica.dithering.ordered_dither import apply_ordered_dithering
 from pixeletica.dithering.random_dither import apply_random_dithering
 
 __all__ = [
-    "apply_no_dithering",
     "apply_floyd_steinberg_dithering",
     "apply_ordered_dithering",
     "apply_random_dithering",
@@ -17,11 +16,6 @@ __all__ = [
 
 # Dictionary of available dithering algorithms
 ALGORITHMS = {
-    "none": {
-        "name": "No Dithering",
-        "function": apply_no_dithering,
-        "id": "No_Dithering",
-    },
     "floyd_steinberg": {
         "name": "Floyd-Steinberg",
         "function": apply_floyd_steinberg_dithering,
