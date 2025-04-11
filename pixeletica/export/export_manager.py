@@ -231,55 +231,148 @@ def export_processed_image(
         Dictionary containing the export results
     """
     manager = ExportManager(output_dir=output_dir)
+    export_results = {}
 
-    # Set line version options based on version_options if provided
+    # Process all requested line versions
     if version_options:
-        # Handle no_lines option
+        # Export with no lines if requested
         if version_options.get("no_lines", False):
-            include_no_lines_version = True
+            no_lines_result = manager.export_image(
+                image,
+                f"{base_name}_no_lines",
+                export_types=export_types,
+                origin_x=origin_x,
+                origin_z=origin_z,
+                draw_chunk_lines=False,
+                chunk_line_color=chunk_line_color,
+                draw_block_lines=False,
+                block_line_color=block_line_color,
+                split_count=split_count,
+                web_tile_size=web_tile_size,
+                include_lines_version=False,
+                include_no_lines_version=True,
+                algorithm_name=algorithm_name,
+            )
+            export_results["no_lines"] = no_lines_result
 
-        # Handle line drawing options if any lines are requested
-        if (
-            version_options.get("only_block_lines", False)
-            or version_options.get("only_chunk_lines", False)
-            or version_options.get("both_lines", False)
-        ):
-            include_lines_version = True
+        # Export with only block lines
+        if version_options.get("only_block_lines", False):
+            block_lines_result = manager.export_image(
+                image,
+                f"{base_name}_block_lines",
+                export_types=export_types,
+                origin_x=origin_x,
+                origin_z=origin_z,
+                draw_chunk_lines=False,
+                chunk_line_color=chunk_line_color,
+                draw_block_lines=True,
+                block_line_color=block_line_color,
+                split_count=split_count,
+                web_tile_size=web_tile_size,
+                include_lines_version=True,
+                include_no_lines_version=False,
+                algorithm_name=algorithm_name,
+            )
+            export_results["block_lines"] = block_lines_result
 
-            # Set line drawing flags based on version options
-            if version_options.get("only_block_lines", False):
-                draw_block_lines = True
-                draw_chunk_lines = False
-            elif version_options.get("only_chunk_lines", False):
-                draw_chunk_lines = True
-                draw_block_lines = False
-            elif version_options.get("both_lines", False):
-                draw_block_lines = True
-                draw_chunk_lines = True
+        # Export with only chunk lines
+        if version_options.get("only_chunk_lines", False):
+            chunk_lines_result = manager.export_image(
+                image,
+                f"{base_name}_chunk_lines",
+                export_types=export_types,
+                origin_x=origin_x,
+                origin_z=origin_z,
+                draw_chunk_lines=True,
+                chunk_line_color=chunk_line_color,
+                draw_block_lines=False,
+                block_line_color=block_line_color,
+                split_count=split_count,
+                web_tile_size=web_tile_size,
+                include_lines_version=True,
+                include_no_lines_version=False,
+                algorithm_name=algorithm_name,
+            )
+            export_results["chunk_lines"] = chunk_lines_result
 
-    # Log the export settings
-    import logging
+        # Export with both line types
+        if version_options.get("both_lines", False):
+            both_lines_result = manager.export_image(
+                image,
+                f"{base_name}_both_lines",
+                export_types=export_types,
+                origin_x=origin_x,
+                origin_z=origin_z,
+                draw_chunk_lines=True,
+                chunk_line_color=chunk_line_color,
+                draw_block_lines=True,
+                block_line_color=block_line_color,
+                split_count=split_count,
+                web_tile_size=web_tile_size,
+                include_lines_version=True,
+                include_no_lines_version=False,
+                algorithm_name=algorithm_name,
+            )
+            export_results["both_lines"] = both_lines_result
 
-    logging.info(
-        f"Exporting image with settings: draw_chunk_lines={draw_chunk_lines}, "
-        f"draw_block_lines={draw_block_lines}, "
-        f"include_lines_version={include_lines_version}, "
-        f"include_no_lines_version={include_no_lines_version}"
-    )
+        # If no specific options were selected, use the fallback approach
+        if not export_results:
+            return_result = manager.export_image(
+                image,
+                base_name,
+                export_types=export_types,
+                origin_x=origin_x,
+                origin_z=origin_z,
+                draw_chunk_lines=draw_chunk_lines,
+                chunk_line_color=chunk_line_color,
+                draw_block_lines=draw_block_lines,
+                block_line_color=block_line_color,
+                split_count=split_count,
+                web_tile_size=web_tile_size,
+                include_lines_version=include_lines_version,
+                include_no_lines_version=include_no_lines_version,
+                algorithm_name=algorithm_name,
+            )
+            return return_result
 
-    return manager.export_image(
-        image,
-        base_name,
-        export_types=export_types,
-        origin_x=origin_x,
-        origin_z=origin_z,
-        draw_chunk_lines=draw_chunk_lines,
-        chunk_line_color=chunk_line_color,
-        draw_block_lines=draw_block_lines,
-        block_line_color=block_line_color,
-        split_count=split_count,
-        web_tile_size=web_tile_size,
-        include_lines_version=include_lines_version,
-        include_no_lines_version=include_no_lines_version,
-        algorithm_name=algorithm_name,
-    )
+        # Combine and return all results
+        if len(export_results) == 1:
+            return list(export_results.values())[0]
+
+        # Combine multiple export results
+        combined_result = {
+            "export_dir": next(iter(export_results.values()))["export_dir"],
+            "timestamp": next(iter(export_results.values()))["timestamp"],
+            "coordinates": next(iter(export_results.values()))["coordinates"],
+            "version_exports": export_results,
+        }
+        return combined_result
+
+    # Legacy path when no version_options are provided
+    else:
+        # Log the export settings
+        import logging
+
+        logging.info(
+            f"Exporting image with settings: draw_chunk_lines={draw_chunk_lines}, "
+            f"draw_block_lines={draw_block_lines}, "
+            f"include_lines_version={include_lines_version}, "
+            f"include_no_lines_version={include_no_lines_version}"
+        )
+
+        return manager.export_image(
+            image,
+            base_name,
+            export_types=export_types,
+            origin_x=origin_x,
+            origin_z=origin_z,
+            draw_chunk_lines=draw_chunk_lines,
+            chunk_line_color=chunk_line_color,
+            draw_block_lines=draw_block_lines,
+            block_line_color=block_line_color,
+            split_count=split_count,
+            web_tile_size=web_tile_size,
+            include_lines_version=include_lines_version,
+            include_no_lines_version=include_no_lines_version,
+            algorithm_name=algorithm_name,
+        )

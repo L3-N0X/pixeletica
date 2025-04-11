@@ -109,6 +109,45 @@ class LineRenderer:
         self.origin_x = origin_x
         self.origin_z = origin_z
 
+    def _blend_pixel(self, img, x, y, line_color):
+        """
+        Blend a line color with the existing pixel color using alpha blending.
+
+        Args:
+            img: PIL Image to modify
+            x: x-coordinate of the pixel
+            y: y-coordinate of the pixel
+            line_color: RGBA tuple of the line color
+        """
+        # Make sure coordinates are within image bounds
+        if x < 0 or y < 0 or x >= img.width or y >= img.height:
+            return
+
+        # Get current pixel color
+        current_color = img.getpixel((x, y))
+
+        # If image doesn't have alpha channel, convert current color
+        if len(current_color) == 3:
+            current_color = current_color + (255,)
+
+        # Extract components
+        line_r, line_g, line_b, line_a = line_color
+        curr_r, curr_g, curr_b, curr_a = current_color
+
+        # Normalize alpha values to 0-1
+        line_alpha = line_a / 255.0
+
+        # Blend colors based on line alpha
+        new_r = int((line_r * line_alpha) + (curr_r * (1 - line_alpha)))
+        new_g = int((line_g * line_alpha) + (curr_g * (1 - line_alpha)))
+        new_b = int((line_b * line_alpha) + (curr_b * (1 - line_alpha)))
+
+        # Keep the maximum alpha
+        new_a = max(curr_a, line_a)
+
+        # Set the new pixel color
+        img.putpixel((x, y), (new_r, new_g, new_b, new_a))
+
     def add_lines_to_image(self, image):
         """
         Add chunk lines and/or block grid lines to an image.
@@ -145,13 +184,18 @@ class LineRenderer:
             width: Width of the image
             height: Height of the image
         """
+        # Get direct access to pixel data for better control
+        img = draw._image
+
         # Vertical lines (down)
         for x in range(1, width):
-            draw.line([(x, 0), (x, height - 1)], fill=self.block_line_color, width=1)
+            for y in range(height):
+                self._blend_pixel(img, x, y, self.block_line_color)
 
         # Horizontal lines (across)
         for y in range(1, height):
-            draw.line([(0, y), (width - 1, y)], fill=self.block_line_color, width=1)
+            for x in range(width):
+                self._blend_pixel(img, x, y, self.block_line_color)
 
     def _draw_chunk_lines(self, draw, width, height):
         """
@@ -162,17 +206,20 @@ class LineRenderer:
             width: Width of the image
             height: Height of the image
         """
+        # Get direct access to pixel data for better control
+        img = draw._image
+
         # Vertical chunk lines
         for x in range(width):
             if is_chunk_boundary_x(x, self.offset_x):
-                draw.line(
-                    [(x, 0), (x, height - 1)], fill=self.chunk_line_color, width=1
-                )
+                for y in range(height):
+                    self._blend_pixel(img, x, y, self.chunk_line_color)
 
         # Horizontal chunk lines
         for z in range(height):
             if is_chunk_boundary_z(z, self.offset_z):
-                draw.line([(0, z), (width - 1, z)], fill=self.chunk_line_color, width=1)
+                for x in range(width):
+                    self._blend_pixel(img, x, z, self.chunk_line_color)
 
 
 def apply_lines_to_image(
