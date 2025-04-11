@@ -41,43 +41,8 @@ class DitherApp:
         # Log application start
         self.logger.info("Application started")
 
-        # Set dark theme
-        self.root.configure(bg="#0a0a0a")
+        # Use default theme
         style = ttk.Style()
-        try:
-            style.theme_use("clam")  # Use clam theme if available
-            # Configure dark theme styles
-            style.configure("TFrame", background="#0a0a0a")
-            style.configure("TLabelframe", background="#0a0a0a", foreground="#ffffff")
-            style.configure(
-                "TLabelframe.Label", background="#0a0a0a", foreground="#ffffff"
-            )
-            style.configure("TLabel", background="#0a0a0a", foreground="#ffffff")
-            style.configure("TButton", background="#1a1a1a", foreground="#ffffff")
-            style.configure("TCheckbutton", background="#0a0a0a", foreground="#ffffff")
-            style.configure("TRadiobutton", background="#0a0a0a", foreground="#ffffff")
-            style.configure("TEntry", fieldbackground="#1a1a1a", foreground="#ffffff")
-            style.configure("TCanvas", background="#0a0a0a")
-
-            # Additional styling for better visibility
-            style.map(
-                "TButton",
-                background=[("active", "#252525"), ("pressed", "#252525")],
-                foreground=[("active", "#ffffff")],
-            )
-            style.map(
-                "TCheckbutton",
-                background=[("active", "#252525")],
-                foreground=[("active", "#ffffff")],
-            )
-            style.map(
-                "TRadiobutton",
-                background=[("active", "#252525")],
-                foreground=[("active", "#ffffff")],
-            )
-        except tk.TclError:
-            # Fallback if theme not available
-            pass
 
         # Create status bar at the bottom
         self._create_status_bar(root)
@@ -91,7 +56,7 @@ class DitherApp:
         main_frame.add(left_frame, weight=1)
 
         # Create a canvas for scrolling
-        canvas = tk.Canvas(left_frame, bg="#121212", highlightthickness=0)
+        canvas = tk.Canvas(left_frame, highlightthickness=0)
         scrollbar = ttk.Scrollbar(left_frame, orient="vertical", command=canvas.yview)
 
         # Settings frame inside the canvas
@@ -128,9 +93,7 @@ class DitherApp:
         main_frame.add(preview_frame, weight=2)
 
         # Create the preview canvas
-        self.canvas = tk.Canvas(
-            preview_frame, bg="#0d0d0d"
-        )  # Darker background for preview
+        self.canvas = tk.Canvas(preview_frame)  # Using default background
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
         # Bind resize event to update image display when panel size changes
@@ -574,11 +537,16 @@ class DitherApp:
                             self.status_var.set("Generating Litematica schematic...")
                             self.root.update_idletasks()
 
+                            # Get export settings for coordinates
+                            export_settings = self.export_settings.get_export_settings()
+
                             schematic_path = generate_schematic(
                                 block_ids,
                                 self.img_path_var.get(),
                                 algorithm_name,
                                 metadata,
+                                origin_x=export_settings["origin_x"],
+                                origin_z=export_settings["origin_z"],
                             )
 
                             self.status_var.set(f"Saved schematic to: {schematic_path}")

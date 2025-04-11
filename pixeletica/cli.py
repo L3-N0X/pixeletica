@@ -307,7 +307,12 @@ def run_cli():
 
             try:
                 schematic_path = generate_schematic(
-                    block_ids, image_path, algorithm_id, metadata
+                    block_ids,
+                    image_path,
+                    algorithm_id,
+                    metadata,
+                    origin_x=origin_x,
+                    origin_z=origin_z,
                 )
                 print(f"Success! Schematic saved to: {schematic_path}")
             except Exception as e:

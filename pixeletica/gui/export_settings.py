@@ -55,24 +55,10 @@ class ExportSettingsFrame(ttk.Frame):
         self.create_line_settings()
         self.create_export_type_settings()
 
-        # Apply dark theme to canvas elements
-        for child in self.winfo_children():
-            if isinstance(child, ttk.LabelFrame):
-                for subchild in child.winfo_children():
-                    if isinstance(subchild, tk.Canvas):
-                        subchild.configure(
-                            bg="#0a0a0a",
-                            highlightbackground="#1a1a1a",
-                            highlightcolor="#1a1a1a",
-                        )
-
     def create_coordinate_settings(self):
         """Create coordinate settings UI."""
         coord_frame = ttk.LabelFrame(self, text="Minecraft Coordinates", padding="5")
         coord_frame.pack(fill=tk.X, pady=5)
-
-        # Use a dark background for better visibility
-        coord_frame.configure(style="Dark.TLabelframe")
 
         ttk.Label(coord_frame, text="Origin X:").grid(
             row=0, column=0, padx=5, pady=2, sticky=tk.W

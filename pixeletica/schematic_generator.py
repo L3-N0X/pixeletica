@@ -8,7 +8,9 @@ import time
 import numpy as np
 
 
-def generate_schematic(block_ids, image_name, algorithm_name, metadata=None):
+def generate_schematic(
+    block_ids, image_name, algorithm_name, metadata=None, origin_x=0, origin_z=0
+):
     """
     Generate a Litematica schematic from block IDs.
 
@@ -20,6 +22,8 @@ def generate_schematic(block_ids, image_name, algorithm_name, metadata=None):
             - author: Name of the author
             - description: Description of the schematic
             - name: Name of the schematic
+        origin_x: X-coordinate in the Minecraft world to position the schematic
+        origin_z: Z-coordinate in the Minecraft world to position the schematic
 
     Returns:
         Path to the saved schematic file
@@ -43,9 +47,11 @@ def generate_schematic(block_ids, image_name, algorithm_name, metadata=None):
         "description", f"Generated from {base_name} using {algorithm_name}"
     )
 
-    # Create a region with dimensions (origin at 0,0,0)
+    # Create a region with dimensions
     # For a flat image, y=1 (height is always 1 block)
-    region = Region(0, 0, 0, width, 1, height)
+    # Setting the region's position based on user-specified origin
+    # When the schematic is placed at (0,0,0), this will position the blocks at the correct coordinates
+    region = Region(origin_x, 0, origin_z, width, 1, height)
 
     # Create schematic from the region
     schematic = region.as_schematic(name=name, author=author, description=description)
@@ -58,7 +64,8 @@ def generate_schematic(block_ids, image_name, algorithm_name, metadata=None):
                 # Convert block ID to BlockState
                 # Using default orientation as specified
                 block_state = BlockState(block_id)
-                region[x, 0, z] = block_state  # Y is always 0 (one layer high)
+                # Position blocks correctly based on the region's origin
+                region[x, 0, z] = block_state
 
     # Generate filename for schematic
     timestamp = time.strftime("%Y%m%d_%H%M%S")
