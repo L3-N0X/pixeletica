@@ -19,12 +19,12 @@ from pixeletica.export.export_manager import (
 )
 
 
-class ExportSettingsFrame(ttk.LabelFrame):
+class ExportSettingsFrame(ttk.Frame):
     """Export settings frame for the GUI."""
 
     def __init__(self, parent, **kwargs):
         """Initialize the export settings frame."""
-        super().__init__(parent, text="Export Settings", padding="10", **kwargs)
+        super().__init__(parent, padding="5", **kwargs)
 
         # Initialize variables
         self.origin_x_var = tk.IntVar(value=0)
@@ -43,6 +43,12 @@ class ExportSettingsFrame(ttk.LabelFrame):
 
         self.with_lines_var = tk.BooleanVar(value=True)
         self.without_lines_var = tk.BooleanVar(value=False)
+
+        # Title label for the frame
+        title_label = ttk.Label(
+            self, text="Export Settings", font=("TkDefaultFont", 10, "bold")
+        )
+        title_label.pack(anchor=tk.W, pady=(0, 5))
 
         # Create the UI
         self.create_coordinate_settings()

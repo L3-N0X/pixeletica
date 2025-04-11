@@ -29,10 +29,23 @@ class DitherApp:
         root.title("Pixeletica Minecraft Dithering")
         root.geometry("1000x700")  # Increased window size
 
-        # Set style
+        # Set dark theme
+        self.root.configure(bg="#121212")
         style = ttk.Style()
         try:
             style.theme_use("clam")  # Use clam theme if available
+            # Configure dark theme styles
+            style.configure("TFrame", background="#121212")
+            style.configure("TLabelframe", background="#121212", foreground="#ffffff")
+            style.configure(
+                "TLabelframe.Label", background="#121212", foreground="#ffffff"
+            )
+            style.configure("TLabel", background="#121212", foreground="#ffffff")
+            style.configure("TButton", background="#333333", foreground="#ffffff")
+            style.configure("TCheckbutton", background="#121212", foreground="#ffffff")
+            style.configure("TRadiobutton", background="#121212", foreground="#ffffff")
+            style.configure("TEntry", fieldbackground="#333333", foreground="#ffffff")
+            style.configure("TCanvas", background="#121212")
         except tk.TclError:
             # Fallback if theme not available
             pass
@@ -44,24 +57,61 @@ class DitherApp:
         main_frame = ttk.PanedWindow(root, orient=tk.HORIZONTAL)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # Left side - settings
-        settings_frame = ttk.Frame(main_frame, padding="5")
-        main_frame.add(settings_frame, weight=1)
+        # Left side - settings with scrolling capability
+        left_frame = ttk.Frame(main_frame)
+        main_frame.add(left_frame, weight=1)
+
+        # Create a canvas for scrolling
+        canvas = tk.Canvas(left_frame, bg="#121212", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(left_frame, orient="vertical", command=canvas.yview)
+
+        # Settings frame inside the canvas
+        settings_frame = ttk.Frame(canvas)
+
+        # Configure canvas
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Add the settings frame to the canvas
+        canvas_frame = canvas.create_window((0, 0), window=settings_frame, anchor="nw")
+
+        # Make the settings frame expand to the width of the canvas
+        def configure_frame(event):
+            canvas.itemconfig(canvas_frame, width=event.width)
+
+        canvas.bind("<Configure>", configure_frame)
+
+        # Update the scrollregion when the size of the settings frame changes
+        def on_frame_configured(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        settings_frame.bind("<Configure>", on_frame_configured)
+
+        # Enable mousewheel scrolling
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
         # Right side - preview
         preview_frame = ttk.LabelFrame(main_frame, text="Preview", padding="10")
         main_frame.add(preview_frame, weight=2)
 
         # Create the preview canvas
-        self.canvas = tk.Canvas(preview_frame, bg="white")
+        self.canvas = tk.Canvas(
+            preview_frame, bg="#1e1e1e"
+        )  # Dark background for preview
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
         # Create the settings UI components in the left frame
         self._create_image_selection(settings_frame)
-        self._create_dimensions_coordinates_section(settings_frame)
+        self._create_dimensions_section(settings_frame)
         self._create_dithering_options(settings_frame)
         self._create_schematic_options(settings_frame)
-        self._create_export_settings(settings_frame)
+        # Add export settings frame directly, not nested
+        self.export_settings = ExportSettingsFrame(settings_frame)
+        self.export_settings.pack(fill=tk.X, pady=5)
         self._create_action_buttons(settings_frame)
 
         # Initialize
@@ -91,63 +141,39 @@ class DitherApp:
             side=tk.RIGHT, padx=5
         )
 
-    def _create_dimensions_coordinates_section(self, parent):
-        """Create dimensions and Minecraft coordinates section frame."""
-        dim_coord_frame = ttk.LabelFrame(
-            parent, text="Dimensions & Coordinates", padding="10"
-        )
-        dim_coord_frame.pack(fill=tk.X, pady=5)
-
-        # Create dimensions frame
-        dim_frame = ttk.Frame(dim_coord_frame)
+    def _create_dimensions_section(self, parent):
+        """Create dimensions section frame."""
+        dim_frame = ttk.LabelFrame(parent, text="Dimensions", padding="10")
         dim_frame.pack(fill=tk.X, pady=5)
 
-        ttk.Label(dim_frame, text="Width:").grid(
+        # Create dimensions controls
+        dim_controls = ttk.Frame(dim_frame)
+        dim_controls.pack(fill=tk.X, pady=5)
+
+        ttk.Label(dim_controls, text="Width:").grid(
             row=0, column=0, padx=5, pady=5, sticky=tk.W
         )
         self.width_var = tk.StringVar()
-        ttk.Entry(dim_frame, textvariable=self.width_var, width=10).grid(
+        ttk.Entry(dim_controls, textvariable=self.width_var, width=10).grid(
             row=0, column=1, padx=5, pady=5
         )
 
-        ttk.Label(dim_frame, text="Height:").grid(
+        ttk.Label(dim_controls, text="Height:").grid(
             row=1, column=0, padx=5, pady=5, sticky=tk.W
         )
         self.height_var = tk.StringVar()
-        ttk.Entry(dim_frame, textvariable=self.height_var, width=10).grid(
+        ttk.Entry(dim_controls, textvariable=self.height_var, width=10).grid(
             row=1, column=1, padx=5, pady=5
         )
 
-        ttk.Label(dim_frame, text="(Leave empty to maintain aspect ratio)").grid(
+        ttk.Label(dim_controls, text="(Leave empty to maintain aspect ratio)").grid(
             row=0, column=2, rowspan=2, padx=5, pady=5, sticky=tk.W
         )
 
-        # Create Minecraft coordinates frame
-        coord_frame = ttk.Frame(dim_coord_frame)
-        coord_frame.pack(fill=tk.X, pady=5)
-
-        ttk.Label(coord_frame, text="Origin X:").grid(
-            row=0, column=0, padx=5, pady=5, sticky=tk.W
-        )
-        self.origin_x_var = tk.IntVar(value=0)
-        ttk.Entry(coord_frame, textvariable=self.origin_x_var, width=10).grid(
-            row=0, column=1, padx=5, pady=5
-        )
-
-        ttk.Label(coord_frame, text="Origin Z:").grid(
-            row=1, column=0, padx=5, pady=5, sticky=tk.W
-        )
-        self.origin_z_var = tk.IntVar(value=0)
-        ttk.Entry(coord_frame, textvariable=self.origin_z_var, width=10).grid(
-            row=1, column=1, padx=5, pady=5
-        )
-
-        # Description of what these coordinates represent
-        ttk.Label(
-            coord_frame,
-            text="(Top-left corner coordinates in Minecraft world)",
-            wraplength=200,
-        ).grid(row=0, column=2, rowspan=2, padx=5, pady=5, sticky=tk.W)
+    def _create_dimensions_coordinates_section(self, parent):
+        """Create dimensions and Minecraft coordinates section frame."""
+        # This method is obsolete, replaced by _create_dimensions_section
+        pass
 
     def _create_dithering_options(self, parent):
         """Create dithering algorithm options."""
@@ -248,12 +274,8 @@ class DitherApp:
 
     def _create_export_settings(self, parent):
         """Create export settings section."""
-        export_frame = ttk.LabelFrame(parent, text="Export Settings", padding="10")
-        export_frame.pack(fill=tk.X, pady=5)
-
-        # Add export settings
-        self.export_settings = ExportSettingsFrame(export_frame)
-        self.export_settings.pack(fill=tk.BOTH, expand=True)
+        # This method is no longer used as we're adding the ExportSettingsFrame directly
+        pass
 
     def _create_action_buttons(self, parent):
         """Create action buttons."""
@@ -462,10 +484,15 @@ class DitherApp:
                                         "block_line_color"
                                     ],
                                     split_count=export_settings["split_count"],
-                                    include_lines_version=export_settings["with_lines"],
-                                    include_no_lines_version=export_settings[
-                                        "without_lines"
-                                    ],
+                                    include_lines_version=export_settings.get(
+                                        "with_lines", True
+                                    ),
+                                    include_no_lines_version=export_settings.get(
+                                        "without_lines", False
+                                    ),
+                                    version_options=export_settings.get(
+                                        "version_options", {}
+                                    ),
                                     algorithm_name=algorithm_name,
                                 )
 
