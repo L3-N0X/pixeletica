@@ -12,16 +12,13 @@ import logging
 import os
 from datetime import datetime
 from io import BytesIO
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from fastapi_limiter.depends import RateLimiter
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse, StreamingResponse
 
-from pixeletica.api.models import MapInfo, MapListResponse, MapMetadata
-from pixeletica.api.services import storage
+from src.pixeletica.api.models import MapInfo, MapListResponse
+from src.pixeletica.api.services import storage
 
 
 async def get_redis() -> redis.Redis:
@@ -76,7 +73,7 @@ async def list_maps() -> MapListResponse:
                     id=task_id,
                     name=metadata.get("name", f"Map {task_id[:6]}"),
                     created=datetime.fromisoformat(metadata.get("updated")),
-                    thumbnail=f"/api/map/{task_id}/thumbnail.jpg",
+                    thumbnail=f"/api/map/{task_id}/thumbnail.png",
                     description=metadata.get("description"),
                 )
                 maps.append(map_info)
@@ -119,7 +116,7 @@ async def get_map_metadata(map_id: str):
     return metadata
 
 
-@router.get("/api/map/{map_id}/full-image.jpg")
+@router.get("/api/map/{map_id}/full-image.png")
 async def get_map_full_image(map_id: str):
     """
     Get the full image for a map.
@@ -128,21 +125,21 @@ async def get_map_full_image(map_id: str):
         map_id: Map identifier (task ID)
 
     Returns:
-        Full-size JPEG image of the map
+        Full-size PNG image of the map
     """
     # Check if map exists
     task_dir = storage.TASKS_DIR / map_id
-    full_image_path = task_dir / "web" / "full-image.jpg"
+    full_image_path = task_dir / "web" / "full-image.png"
 
     if not full_image_path.exists():
         raise HTTPException(
             status_code=404, detail=f"Full image not found for map: {map_id}"
         )
 
-    return FileResponse(path=full_image_path, media_type="image/jpeg")
+    return FileResponse(path=full_image_path, media_type="image/png")
 
 
-@router.get("/api/map/{map_id}/thumbnail.jpg")
+@router.get("/api/map/{map_id}/thumbnail.png")
 async def get_map_thumbnail(map_id: str):
     """
     Get a thumbnail for a map.
@@ -151,11 +148,11 @@ async def get_map_thumbnail(map_id: str):
         map_id: Map identifier (task ID)
 
     Returns:
-        Thumbnail JPEG image of the map
+        Thumbnail PNG image of the map
     """
     # Check if map exists
     task_dir = storage.TASKS_DIR / map_id
-    full_image_path = task_dir / "web" / "full-image.jpg"
+    full_image_path = task_dir / "web" / "full-image.png"
 
     if not full_image_path.exists():
         raise HTTPException(
@@ -163,19 +160,19 @@ async def get_map_thumbnail(map_id: str):
         )
 
     # Create a thumbnail if it doesn't exist
-    thumbnail_path = task_dir / "web" / "thumbnail.jpg"
+    thumbnail_path = task_dir / "web" / "thumbnail.png"
     if not thumbnail_path.exists():
         try:
             from PIL import Image
 
             img = Image.open(full_image_path)
             img.thumbnail((300, 300))
-            img.save(thumbnail_path, "JPEG", quality=85)
+            img.save(thumbnail_path, "PNG")
         except Exception as e:
             logger.error(f"Failed to create thumbnail: {e}")
-            return FileResponse(path=full_image_path, media_type="image/jpeg")
+            return FileResponse(path=full_image_path, media_type="image/png")
 
-    return FileResponse(path=thumbnail_path, media_type="image/jpeg")
+    return FileResponse(path=thumbnail_path, media_type="image/png")
 
 
 @router.get("/api/map/{map_id}/tiles/{zoom}/{x}/{y}.png")

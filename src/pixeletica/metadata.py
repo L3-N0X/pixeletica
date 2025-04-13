@@ -48,7 +48,7 @@ def create_metadata(
     output_filename = os.path.basename(output_image_path)
 
     # Calculate coordinate information
-    from pixeletica.coordinates.chunk_calculator import calculate_image_offset
+    from src.pixeletica.coordinates.chunk_calculator import calculate_image_offset
 
     coordinates = calculate_image_offset(origin_x, origin_z)
 
@@ -64,7 +64,10 @@ def create_metadata(
         "algorithm": algorithm_name,
         "processing_time_seconds": processing_time,
         "timestamp": datetime.datetime.now().isoformat(),
-        "block_palette": {"name": palette_name, "source": "minecraft/block-colors.csv"},
+        "block_palette": {
+            "name": palette_name,
+            "source": "src/minecraft/block-colors.csv",
+        },
         "coordinates": coordinates,
     }
 

@@ -79,7 +79,7 @@ def save_dithered_image(
     Returns:
         Path of the saved image
     """
-    from pixeletica.metadata import create_metadata, save_metadata_json
+    from src.pixeletica.metadata import create_metadata, save_metadata_json
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = os.path.basename(original_path)

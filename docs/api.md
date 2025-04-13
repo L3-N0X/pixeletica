@@ -93,7 +93,7 @@ Starts a new image conversion task. This is an asynchronous operation: the API i
   "height": 80,
   "algorithm": "floyd_steinberg",
   "exportSettings": {
-    "exportTypes": ["png", "jpg", "webp", "html"],
+    "exportTypes": ["png"],
     "originX": 0,
     "originY": 0,
     "originZ": 0,

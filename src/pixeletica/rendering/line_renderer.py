@@ -7,9 +7,11 @@ This module provides functionality for adding chunk boundary lines and block gri
 from PIL import Image, ImageDraw
 import re
 
-from pixeletica.coordinates.chunk_calculator import (
+from src.pixeletica.coordinates.chunk_calculator import (
     is_chunk_boundary_x,
     is_chunk_boundary_z,
+    is_block_boundary_pixel,
+    is_chunk_boundary_pixel,
 )
 
 # Default colors
@@ -103,7 +105,7 @@ class LineRenderer:
             self.block_line_color = hex_to_rgba(DEFAULT_BLOCK_LINE_COLOR)
 
         # Calculate offsets based on origin coordinates
-        from pixeletica.coordinates.chunk_calculator import get_offset_in_chunk
+        from src.pixeletica.coordinates.chunk_calculator import get_offset_in_chunk
 
         self.offset_x, self.offset_z = get_offset_in_chunk(origin_x, origin_z)
         self.origin_x = origin_x
@@ -178,6 +180,7 @@ class LineRenderer:
     def _draw_block_lines(self, draw, width, height):
         """
         Draw block grid lines on the image.
+        Each block is rendered as a 16x16 pixel texture, so lines are drawn every 16 pixels.
 
         Args:
             draw: ImageDraw object to draw on
@@ -187,19 +190,21 @@ class LineRenderer:
         # Get direct access to pixel data for better control
         img = draw._image
 
-        # Vertical lines (down)
-        for x in range(1, width):
-            for y in range(height):
-                self._blend_pixel(img, x, y, self.block_line_color)
+        # Convert Minecraft block offsets to pixel offsets (1 block = 16 pixels)
+        pixel_offset_x = self.offset_x * 16
+        pixel_offset_z = self.offset_z * 16
 
-        # Horizontal lines (across)
-        for y in range(1, height):
-            for x in range(width):
-                self._blend_pixel(img, x, y, self.block_line_color)
+        # Draw lines at block boundaries (every 16 pixels)
+        for x in range(width):
+            for z in range(height):
+                if is_block_boundary_pixel(x, z, pixel_offset_x, pixel_offset_z):
+                    self._blend_pixel(img, x, z, self.block_line_color)
 
     def _draw_chunk_lines(self, draw, width, height):
         """
         Draw chunk boundary lines on the image.
+        Each chunk is 16×16 blocks, with each block being 16×16 pixels,
+        so chunk lines are drawn every 256 pixels (16×16).
 
         Args:
             draw: ImageDraw object to draw on
@@ -209,16 +214,14 @@ class LineRenderer:
         # Get direct access to pixel data for better control
         img = draw._image
 
-        # Vertical chunk lines
-        for x in range(width):
-            if is_chunk_boundary_x(x, self.offset_x):
-                for y in range(height):
-                    self._blend_pixel(img, x, y, self.chunk_line_color)
+        # Convert Minecraft block offsets to pixel offsets (1 block = 16 pixels)
+        pixel_offset_x = self.offset_x * 16
+        pixel_offset_z = self.offset_z * 16
 
-        # Horizontal chunk lines
-        for z in range(height):
-            if is_chunk_boundary_z(z, self.offset_z):
-                for x in range(width):
+        # Draw lines at chunk boundaries (every 256 pixels)
+        for x in range(width):
+            for z in range(height):
+                if is_chunk_boundary_pixel(x, z, pixel_offset_x, pixel_offset_z):
                     self._blend_pixel(img, x, z, self.chunk_line_color)
 
 

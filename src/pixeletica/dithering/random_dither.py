@@ -4,7 +4,7 @@ Random dithering implementation.
 
 import numpy as np
 from PIL import Image
-from pixeletica.block_utils.color_matcher import find_closest_block_color
+from src.pixeletica.block_utils.color_matcher import find_closest_block_color
 
 
 def apply_random_dithering(img):

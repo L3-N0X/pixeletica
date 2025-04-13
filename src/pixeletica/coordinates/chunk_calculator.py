@@ -9,6 +9,7 @@ import math
 
 # Constants
 CHUNK_SIZE = 16  # Minecraft chunks are 16x16 blocks
+TEXTURE_SIZE = 16  # Each block is rendered as 16x16 pixels
 
 
 def get_chunk_from_position(x, z):
@@ -79,6 +80,46 @@ def is_chunk_boundary_z(z, offset_z=0):
         True if the position is on a chunk boundary, False otherwise
     """
     return (z + offset_z) % CHUNK_SIZE == 0
+
+
+def is_block_boundary_pixel(pixel_x, pixel_z, offset_x=0, offset_z=0):
+    """
+    Check if a given pixel coordinate in the output image is on a block boundary.
+    With a 16×16 pixel texture for each block, block boundaries occur every 16 pixels.
+
+    Args:
+        pixel_x: X-coordinate in pixels (0-indexed from the start of the image)
+        pixel_z: Z-coordinate in pixels (0-indexed from the start of the image)
+        offset_x: X offset in pixels from the world origin
+        offset_z: Z offset in pixels from the world origin
+
+    Returns:
+        True if the position is on a block boundary, False otherwise
+    """
+    return (pixel_x + offset_x) % TEXTURE_SIZE == 0 or (
+        pixel_z + offset_z
+    ) % TEXTURE_SIZE == 0
+
+
+def is_chunk_boundary_pixel(pixel_x, pixel_z, offset_x=0, offset_z=0):
+    """
+    Check if a given pixel coordinate in the output image is on a chunk boundary.
+    With a 16×16 pixel texture for each block and 16 blocks per chunk,
+    chunk boundaries occur every 256 pixels (16×16).
+
+    Args:
+        pixel_x: X-coordinate in pixels (0-indexed from the start of the image)
+        pixel_z: Z-coordinate in pixels (0-indexed from the start of the image)
+        offset_x: X offset in pixels from the world origin
+        offset_z: Z offset in pixels from the world origin
+
+    Returns:
+        True if the position is on a chunk boundary, False otherwise
+    """
+    chunk_pixel_size = CHUNK_SIZE * TEXTURE_SIZE  # 16 blocks * 16 pixels = 256 pixels
+    return (pixel_x + offset_x) % chunk_pixel_size == 0 or (
+        pixel_z + offset_z
+    ) % chunk_pixel_size == 0
 
 
 def calculate_image_offset(origin_x, origin_z):

@@ -4,7 +4,7 @@ Ordered dithering using a Bayer matrix.
 
 import numpy as np
 from PIL import Image
-from pixeletica.block_utils.color_matcher import find_closest_block_color
+from src.pixeletica.block_utils.color_matcher import find_closest_block_color
 
 
 def apply_ordered_dithering(img):

@@ -36,7 +36,7 @@ def export_web_tiles(
     width, height = image.size
 
     # Save the full image for initial loading
-    full_image_path = os.path.join(output_dir, "full-image.jpg")
+    full_image_path = os.path.join(output_dir, "full-image.png")
     # Create a copy of the image to avoid modifying the original
     full_image = image.copy()
     # If the image is large, resize it to a reasonable size for the full image
@@ -46,8 +46,8 @@ def export_web_tiles(
         new_height = int(height * scale_factor)
         full_image = full_image.resize((new_width, new_height), Image.LANCZOS)
 
-    # Save the full image as JPEG with reasonable quality
-    full_image.save(full_image_path, "JPEG", quality=85)
+    # Save the full image as PNG with reasonable quality
+    full_image.save(full_image_path, "PNG")
 
     # Create metadata structure
     metadata = {

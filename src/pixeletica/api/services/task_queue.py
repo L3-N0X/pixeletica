@@ -13,13 +13,13 @@ from typing import Any, Dict, Optional, Union
 
 from celery import Celery
 
-from pixeletica.api.models import TaskStatus
-from pixeletica.api.services import storage
-from pixeletica.dithering import get_algorithm_by_name
-from pixeletica.export.export_manager import export_processed_image
-from pixeletica.image_ops import load_image, resize_image
-from pixeletica.rendering.block_renderer import render_blocks_from_block_ids
-from pixeletica.schematic_generator import generate_schematic
+from src.pixeletica.api.models import TaskStatus
+from src.pixeletica.api.services import storage
+from src.pixeletica.dithering import get_algorithm_by_name
+from src.pixeletica.export.export_manager import export_processed_image
+from src.pixeletica.image_ops import load_image, resize_image
+from src.pixeletica.rendering.block_renderer import render_blocks_from_block_ids
+from src.pixeletica.schematic_generator import generate_schematic
 
 # Configure Celery
 redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")

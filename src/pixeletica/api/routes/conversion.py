@@ -25,13 +25,13 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from fastapi_limiter.depends import RateLimiter
 
-from pixeletica.api.config import MAX_FILE_SIZE  # Import from config
-from pixeletica.api.models import (
+from src.pixeletica.api.config import MAX_FILE_SIZE  # Import from config
+from src.pixeletica.api.models import (
     FileListResponse,
     SelectiveDownloadRequest,
     TaskResponse,
 )
-from pixeletica.api.services import storage, task_queue
+from src.pixeletica.api.services import storage, task_queue
 
 # Initialize router
 router = APIRouter(prefix="/conversion", tags=["conversion"])

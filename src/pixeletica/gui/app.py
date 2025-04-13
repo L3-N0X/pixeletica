@@ -4,19 +4,56 @@ Main GUI application for Pixeletica.
 
 import os
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, messagebox
+import subprocess
+import platform
 from PIL import Image, ImageTk
 
-from pixeletica.block_utils.block_loader import load_block_colors, get_block_colors
-from pixeletica.dithering import get_algorithm_by_name
-from pixeletica.image_ops import load_image, resize_image, save_dithered_image
-from pixeletica.gui.export_settings import ExportSettingsFrame
-from pixeletica.rendering.block_renderer import render_blocks_from_block_ids
-from pixeletica.export.export_manager import export_processed_image
+from src.pixeletica.block_utils.block_loader import load_block_colors, get_block_colors
+from src.pixeletica.dithering import get_algorithm_by_name
+from src.pixeletica.image_ops import load_image, resize_image, save_dithered_image
+from src.pixeletica.gui.export_settings import ExportSettingsFrame
+from src.pixeletica.rendering.block_renderer import render_blocks_from_block_ids
+from src.pixeletica.export.export_manager import export_processed_image
 
 
 class DitherApp:
     """Main GUI application class for Pixeletica."""
+
+    def show_completion_alert(self, folder_path):
+        """
+        Show a success alert and ask if the user wants to open the output folder.
+
+        Args:
+            folder_path: Path to the folder containing the exported files
+        """
+        result = messagebox.askquestion(
+            "Conversion Complete",
+            "Conversion completed successfully!\n\nWould you like to open the output folder?",
+            icon="info",
+        )
+
+        if result == "yes":
+            self.open_folder(folder_path)
+
+    def open_folder(self, path):
+        """
+        Open a folder in the file explorer.
+
+        Args:
+            path: Path to the folder to open
+        """
+        try:
+            if platform.system() == "Windows":
+                os.startfile(path)
+            elif platform.system() == "Darwin":  # macOS
+                subprocess.run(["open", path], check=True)
+            else:  # Linux
+                subprocess.run(["xdg-open", path], check=True)
+            return True
+        except Exception as e:
+            self.logger.error(f"Error opening folder: {e}")
+            return False
 
     def __init__(self, root):
         """
@@ -116,7 +153,7 @@ class DitherApp:
         self.photo_img = None  # To keep reference to prevent garbage collection
 
         # Load block colors
-        if load_block_colors("./minecraft/block-colors.csv"):
+        if load_block_colors("./src/minecraft/block-colors.csv"):
             self.status_var.set(
                 f"Ready - Loaded {len(get_block_colors())} Minecraft block colors"
             )
@@ -393,158 +430,157 @@ class DitherApp:
 
         # Resize image
         resized_img = self.resize_image_from_inputs()
-        if resized_img:
-            # Apply dithering
-            self.status_var.set("Applying dithering...")
-            self.root.update_idletasks()
+        if not resized_img:
+            return
 
-            dithered_img, algorithm_name, metadata_info = self.apply_dithering(
-                resized_img
+        # Apply dithering
+        self.status_var.set("Applying dithering...")
+        self.root.update_idletasks()
+
+        dithered_img, algorithm_name, metadata_info = self.apply_dithering(resized_img)
+        if not dithered_img:
+            self.status_var.set("Failed to apply dithering algorithm")
+            return
+
+        # Save the dithered image with metadata
+        try:
+            block_ids = metadata_info.get("block_ids") if metadata_info else None
+            processing_time = (
+                metadata_info.get("processing_time", 0) if metadata_info else 0
             )
-            if dithered_img:
-                # Save the dithered image with metadata
-                try:
-                    block_ids = (
-                        metadata_info.get("block_ids") if metadata_info else None
-                    )
-                    processing_time = (
-                        metadata_info.get("processing_time", 0) if metadata_info else 0
-                    )
 
-                    saved_path = save_dithered_image(
-                        dithered_img,
+            saved_path = save_dithered_image(
+                dithered_img,
+                self.img_path_var.get(),
+                algorithm_name,
+                block_ids=block_ids,
+                processing_time=processing_time,
+            )
+
+            self.status_var.set(
+                f"Saved: {saved_path} (processing time: {processing_time:.2f}s)"
+            )
+            self.dithered_img = dithered_img
+            self.display_image(dithered_img)
+
+            # Export with textures if settings are available
+            export_settings = self.export_settings.get_export_settings()
+            export_dir = None
+
+            if any(export_settings["export_types"]):
+                try:
+                    self.status_var.set("Rendering blocks with textures...")
+                    self.root.update_idletasks()
+
+                    # Render blocks with textures
+                    block_image = render_blocks_from_block_ids(block_ids)
+
+                    if block_image:
+                        self.status_var.set("Exporting images...")
+                        self.root.update_idletasks()
+
+                        base_name = os.path.splitext(
+                            os.path.basename(self.img_path_var.get())
+                        )[0]
+
+                        # Export with the configured settings
+                        export_results = export_processed_image(
+                            block_image,
+                            base_name,
+                            export_types=export_settings["export_types"],
+                            origin_x=export_settings["origin_x"],
+                            origin_z=export_settings["origin_z"],
+                            draw_chunk_lines=export_settings["draw_chunk_lines"],
+                            chunk_line_color=export_settings["chunk_line_color"],
+                            draw_block_lines=export_settings["draw_block_lines"],
+                            block_line_color=export_settings["block_line_color"],
+                            split_count=export_settings["split_count"],
+                            include_lines_version=export_settings.get(
+                                "with_lines", True
+                            ),
+                            include_no_lines_version=export_settings.get(
+                                "without_lines", False
+                            ),
+                            version_options=export_settings.get("version_options", {}),
+                            algorithm_name=algorithm_name,
+                        )
+
+                        export_dir = export_results["export_dir"]
+                        self.status_var.set(
+                            f"Export successful! Files saved to: {export_dir}"
+                        )
+
+                        # Update the original metadata with export information
+                        metadata_path = os.path.splitext(saved_path)[0] + ".json"
+                        if os.path.exists(metadata_path):
+                            from src.pixeletica.metadata import (
+                                load_metadata_json,
+                                save_metadata_json,
+                            )
+
+                            metadata = load_metadata_json(metadata_path)
+                            metadata["export_settings"] = export_settings
+                            metadata["exports"] = export_results
+                            save_metadata_json(metadata, saved_path)
+                    else:
+                        self.status_var.set(
+                            "Error: Failed to render blocks with textures"
+                        )
+                except Exception as e:
+                    self.status_var.set(f"Error during export: {e}")
+
+            # Generate schematic if requested
+            schematic_path = None
+            if self.generate_schematic_var.get() and block_ids:
+                try:
+                    # Set default name if empty
+                    if not self.schematic_name_var.get():
+                        image_name = os.path.basename(self.img_path_var.get())
+                        base_name = os.path.splitext(image_name)[0]
+                        self.schematic_name_var.set(base_name)
+
+                    # Import schematic generator
+                    from src.pixeletica.schematic_generator import generate_schematic
+
+                    # Prepare metadata
+                    metadata = {
+                        "author": self.author_var.get(),
+                        "name": self.schematic_name_var.get(),
+                        "description": self.description_var.get(),
+                    }
+
+                    # Generate schematic
+                    self.status_var.set("Generating Litematica schematic...")
+                    self.root.update_idletasks()
+
+                    # Get Y-coordinate from export settings if available
+                    origin_y = export_settings.get("origin_y", 0)
+
+                    schematic_path = generate_schematic(
+                        block_ids,
                         self.img_path_var.get(),
                         algorithm_name,
-                        block_ids=block_ids,
-                        processing_time=processing_time,
+                        metadata,
+                        origin_x=export_settings["origin_x"],
+                        origin_y=origin_y,
+                        origin_z=export_settings["origin_z"],
                     )
-                    self.status_var.set(
-                        f"Saved: {saved_path} (processing time: {processing_time:.2f}s)"
-                    )
-                    self.dithered_img = dithered_img
-                    self.display_image(dithered_img)
 
-                    # Export with textures if settings are available
-                    export_settings = self.export_settings.get_export_settings()
-                    if any(export_settings["export_types"]):
-                        try:
-                            self.status_var.set("Rendering blocks with textures...")
-                            self.root.update_idletasks()
-
-                            # Render blocks with textures
-                            block_image = render_blocks_from_block_ids(block_ids)
-
-                            if block_image:
-                                self.status_var.set("Exporting images...")
-                                self.root.update_idletasks()
-
-                                base_name = os.path.splitext(
-                                    os.path.basename(self.img_path_var.get())
-                                )[0]
-
-                                # Export with the configured settings
-                                export_results = export_processed_image(
-                                    block_image,
-                                    base_name,
-                                    export_types=export_settings["export_types"],
-                                    origin_x=export_settings["origin_x"],
-                                    origin_z=export_settings["origin_z"],
-                                    draw_chunk_lines=export_settings[
-                                        "draw_chunk_lines"
-                                    ],
-                                    chunk_line_color=export_settings[
-                                        "chunk_line_color"
-                                    ],
-                                    draw_block_lines=export_settings[
-                                        "draw_block_lines"
-                                    ],
-                                    block_line_color=export_settings[
-                                        "block_line_color"
-                                    ],
-                                    split_count=export_settings["split_count"],
-                                    include_lines_version=export_settings.get(
-                                        "with_lines", True
-                                    ),
-                                    include_no_lines_version=export_settings.get(
-                                        "without_lines", False
-                                    ),
-                                    version_options=export_settings.get(
-                                        "version_options", {}
-                                    ),
-                                    algorithm_name=algorithm_name,
-                                )
-
-                                self.status_var.set(
-                                    f"Export successful! Files saved to: {export_results['export_dir']}"
-                                )
-
-                                # Update the original metadata with export information
-                                metadata_path = (
-                                    os.path.splitext(saved_path)[0] + ".json"
-                                )
-                                if os.path.exists(metadata_path):
-                                    from pixeletica.metadata import (
-                                        load_metadata_json,
-                                        save_metadata_json,
-                                    )
-
-                                    metadata = load_metadata_json(metadata_path)
-                                    metadata["export_settings"] = export_settings
-                                    metadata["exports"] = export_results
-                                    save_metadata_json(metadata, saved_path)
-                            else:
-                                self.status_var.set(
-                                    "Error: Failed to render blocks with textures"
-                                )
-                        except Exception as e:
-                            self.status_var.set(f"Error during export: {e}")
-
-                    # Generate schematic if requested
-                    if self.generate_schematic_var.get() and block_ids:
-                        try:
-                            # Set default name if empty
-                            if not self.schematic_name_var.get():
-                                image_name = os.path.basename(self.img_path_var.get())
-                                base_name = os.path.splitext(image_name)[0]
-                                self.schematic_name_var.set(base_name)
-
-                            # Import schematic generator
-                            from pixeletica.schematic_generator import (
-                                generate_schematic,
-                            )
-
-                            # Prepare metadata
-                            metadata = {
-                                "author": self.author_var.get(),
-                                "name": self.schematic_name_var.get(),
-                                "description": self.description_var.get(),
-                            }
-
-                            # Generate schematic
-                            self.status_var.set("Generating Litematica schematic...")
-                            self.root.update_idletasks()
-
-                            # Get export settings for coordinates
-                            export_settings = self.export_settings.get_export_settings()
-
-                            # Get Y-coordinate from export settings if available
-                            origin_y = export_settings.get("origin_y", 0)
-
-                            schematic_path = generate_schematic(
-                                block_ids,
-                                self.img_path_var.get(),
-                                algorithm_name,
-                                metadata,
-                                origin_x=export_settings["origin_x"],
-                                origin_y=origin_y,  # Use Y-coordinate if available
-                                origin_z=export_settings["origin_z"],
-                            )
-
-                            self.status_var.set(f"Saved schematic to: {schematic_path}")
-                        except Exception as e:
-                            self.status_var.set(f"Error generating schematic: {e}")
+                    if export_dir:
+                        self.status_var.set(
+                            f"Process complete! Exported images to: {export_dir} and schematic to: {schematic_path}"
+                        )
+                    else:
+                        self.status_var.set(f"Saved schematic to: {schematic_path}")
                 except Exception as e:
-                    self.status_var.set(f"Error saving image: {e}")
+                    self.status_var.set(f"Error generating schematic: {e}")
+
+            # Show completion alert if we have files to show
+            if export_dir:
+                self.show_completion_alert(export_dir)
+
+        except Exception as e:
+            self.status_var.set(f"Error saving image: {e}")
 
     def process_and_export(self):
         """Process, save and export the image in one operation."""
@@ -627,7 +663,7 @@ class DitherApp:
                     # Update the metadata with export information
                     metadata_path = os.path.splitext(saved_path)[0] + ".json"
                     if os.path.exists(metadata_path):
-                        from pixeletica.metadata import (
+                        from src.pixeletica.metadata import (
                             load_metadata_json,
                             save_metadata_json,
                         )
@@ -647,7 +683,7 @@ class DitherApp:
                                 self.schematic_name_var.set(base_name)
 
                             # Import schematic generator
-                            from pixeletica.schematic_generator import (
+                            from src.pixeletica.schematic_generator import (
                                 generate_schematic,
                             )
 
@@ -679,12 +715,21 @@ class DitherApp:
                             self.status_var.set(
                                 f"Process complete! Exported images to: {export_results['export_dir']} and schematic to: {schematic_path}"
                             )
+
+                            # Show success alert and ask to open folder
+                            success_message = f"Conversion completed successfully!\n\nImages exported to: {export_results['export_dir']}\nSchematic saved to: {schematic_path}"
+                            self.show_completion_alert(export_results["export_dir"])
+
                         except Exception as e:
                             self.status_var.set(f"Error generating schematic: {e}")
                     else:
                         self.status_var.set(
                             f"Process complete! Exported images to: {export_results['export_dir']}"
                         )
+
+                        # Show success alert and ask to open folder
+                        success_message = f"Conversion completed successfully!\n\nImages exported to: {export_results['export_dir']}"
+                        self.show_completion_alert(export_results["export_dir"])
                 else:
                     self.status_var.set("Error: Failed to render blocks with textures")
         except Exception as e:
@@ -758,9 +803,13 @@ class DitherApp:
                         algorithm_name=algorithm_id,
                     )
 
+                    export_dir = export_results["export_dir"]
                     self.status_var.set(
-                        f"Export successful! Files saved to: {export_results['export_dir']}"
+                        f"Export successful! Files saved to: {export_dir}"
                     )
+
+                    # Show success alert and ask to open folder
+                    self.show_completion_alert(export_dir)
                 else:
                     self.status_var.set("Error: Failed to render blocks with textures")
             except Exception as e:

@@ -12,7 +12,7 @@ from PIL import Image
 from functools import lru_cache
 
 # Default texture path
-DEFAULT_TEXTURE_PATH = "./minecraft/texturepack/minecraft/textures/block"
+DEFAULT_TEXTURE_PATH = "./src/minecraft/texturepack/minecraft/textures/block"
 
 
 class TextureManager:

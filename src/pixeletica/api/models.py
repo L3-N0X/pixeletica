@@ -30,7 +30,7 @@ class TaskStatus(str, Enum):
 class ExportSettings(BaseModel):
     """Settings for exporting the converted image."""
 
-    exportTypes: List[Literal["png", "jpg", "webp", "html"]] = Field(
+    exportTypes: List[Literal["png"]] = Field(
         default=["png"], description="Output file formats to generate"
     )
     originX: int = Field(

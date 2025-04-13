@@ -8,11 +8,11 @@ import tkinter as tk
 from tkinter import ttk, colorchooser
 import re
 
-from pixeletica.rendering.line_renderer import (
+from src.pixeletica.rendering.line_renderer import (
     DEFAULT_CHUNK_LINE_COLOR,
     DEFAULT_BLOCK_LINE_COLOR,
 )
-from pixeletica.export.export_manager import (
+from src.pixeletica.export.export_manager import (
     EXPORT_TYPE_WEB,
     EXPORT_TYPE_LARGE,
     EXPORT_TYPE_SPLIT,

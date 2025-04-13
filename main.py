@@ -16,7 +16,7 @@ import sys
 import logging
 
 # Import Pixeletica modules
-from pixeletica.cli import main as cli_main
+from src.pixeletica.cli import main as cli_main
 
 
 def ensure_output_dirs():

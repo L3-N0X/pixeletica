@@ -8,7 +8,7 @@ rather than solid colors from a color palette.
 import numpy as np
 from PIL import Image
 
-from pixeletica.rendering.texture_loader import TextureManager
+from src.pixeletica.rendering.texture_loader import TextureManager
 
 
 class BlockRenderer:

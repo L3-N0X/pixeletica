@@ -12,9 +12,9 @@ import sys
 import time
 import argparse
 import logging
-from pixeletica.block_utils.block_loader import load_block_colors
-from pixeletica.dithering import get_algorithm_by_name
-from pixeletica.image_ops import load_image, resize_image, save_dithered_image
+from src.pixeletica.block_utils.block_loader import load_block_colors
+from src.pixeletica.dithering import get_algorithm_by_name
+from src.pixeletica.image_ops import load_image, resize_image, save_dithered_image
 
 
 def resize_image_interactive(image_path):
@@ -70,8 +70,10 @@ def run_cli():
     print("For normal use, please use the GUI interface.\n")
 
     # Load block colors
-    if not load_block_colors("./minecraft/block-colors.csv"):
-        print("Error: Failed to load block colors from ./minecraft/block-colors.csv")
+    if not load_block_colors("./src/minecraft/block-colors.csv"):
+        print(
+            "Error: Failed to load block colors from ./src/minecraft/block-colors.csv"
+        )
         return
 
     # Ask for image path
@@ -222,14 +224,16 @@ def run_cli():
                 with_lines = True
 
             # Render blocks with textures
-            from pixeletica.rendering.block_renderer import render_blocks_from_block_ids
+            from src.pixeletica.rendering.block_renderer import (
+                render_blocks_from_block_ids,
+            )
 
             print("Rendering blocks with textures...")
             block_image = render_blocks_from_block_ids(block_ids)
 
             if block_image:
                 # Export the images
-                from pixeletica.export.export_manager import export_processed_image
+                from src.pixeletica.export.export_manager import export_processed_image
 
                 print("Exporting images...")
                 try:
@@ -256,7 +260,7 @@ def run_cli():
                     # Update metadata with export information
                     metadata_path = os.path.splitext(output_path)[0] + ".json"
                     if os.path.exists(metadata_path):
-                        from pixeletica.metadata import (
+                        from src.pixeletica.metadata import (
                             load_metadata_json,
                             save_metadata_json,
                         )
@@ -301,7 +305,7 @@ def run_cli():
             description = input("Description: ").strip()
 
             # Generate the schematic
-            from pixeletica.schematic_generator import generate_schematic
+            from src.pixeletica.schematic_generator import generate_schematic
 
             metadata = {
                 "author": author,
@@ -333,7 +337,7 @@ def run_api_server():
     This function starts a FastAPI server for programmatic access to Pixeletica.
     """
     # Import and run the API server
-    from pixeletica.api.main import start_api
+    from src.pixeletica.api.main import start_api
 
     start_api()
 
@@ -392,7 +396,7 @@ def main():
     # Run the selected mode
     if args.mode == "gui":
         # Import GUI-related modules only when needed
-        from pixeletica.gui.app import DitherApp
+        from src.pixeletica.gui.app import DitherApp
         import tkinter as tk
 
         # Start the GUI

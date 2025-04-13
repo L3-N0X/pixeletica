@@ -3,7 +3,7 @@ Simple color quantization without dithering.
 """
 
 from PIL import Image
-from pixeletica.block_utils.color_matcher import find_closest_block_color
+from src.pixeletica.block_utils.color_matcher import find_closest_block_color
 
 
 def apply_no_dithering(img):

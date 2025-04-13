@@ -67,7 +67,7 @@ Enter the top-left X,Z coordinates in the Minecraft world. These coordinates det
 
 1. Clone this repository
 2. Install dependencies: `pip install -r requirements.txt`
-3. Place Minecraft textures in `./minecraft/texturepack/minecraft/textures/block`
+3. Place Minecraft textures in `./src/minecraft/texturepack/minecraft/textures/block`
 4. Run the application: `python main.py`
 
 You can also use uv for installation (recommended):

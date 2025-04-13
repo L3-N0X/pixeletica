@@ -11,8 +11,8 @@ import json
 from PIL import Image
 from pathlib import Path
 
-from pixeletica.rendering.line_renderer import apply_lines_to_image
-from pixeletica.coordinates.chunk_calculator import calculate_image_offset
+from src.pixeletica.rendering.line_renderer import apply_lines_to_image
+from src.pixeletica.coordinates.chunk_calculator import calculate_image_offset
 
 # Export settings constants
 EXPORT_TYPE_WEB = "web"
@@ -107,7 +107,7 @@ class ExportManager:
         for export_type in export_types:
             if export_type == EXPORT_TYPE_WEB:
                 # Web exports (tile-based for web viewer)
-                from pixeletica.export.web_export import export_web_tiles
+                from src.pixeletica.export.web_export import export_web_tiles
 
                 # Web exports never have lines
                 web_dir = os.path.join(export_dir, f"web_{base_name}")
@@ -155,7 +155,7 @@ class ExportManager:
 
             elif export_type == EXPORT_TYPE_SPLIT:
                 # Split into N equal parts
-                from pixeletica.export.image_splitter import split_image
+                from src.pixeletica.export.image_splitter import split_image
 
                 split_dir = os.path.join(export_dir, f"split_{split_count}")
                 os.makedirs(split_dir, exist_ok=True)

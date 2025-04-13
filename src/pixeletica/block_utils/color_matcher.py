@@ -2,7 +2,7 @@
 Functions for color matching and finding closest block colors.
 """
 
-from pixeletica.block_utils.block_loader import get_block_colors
+from src.pixeletica.block_utils.block_loader import get_block_colors
 
 
 def find_closest_block_color(pixel_color):

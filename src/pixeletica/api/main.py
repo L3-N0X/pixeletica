@@ -13,8 +13,8 @@ from fastapi_limiter.depends import RateLimiter
 import redis.asyncio as redis
 from typing import Dict, Any
 from fastapi.openapi.docs import get_swagger_ui_html
-from pixeletica.api.routes import conversion, maps
-from pixeletica.api.config import MAX_FILE_SIZE  # Import from config
+from src.pixeletica.api.routes import conversion, maps
+from src.pixeletica.api.config import MAX_FILE_SIZE  # Import from config
 import logging
 import os
 import time
