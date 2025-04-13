@@ -8,16 +8,16 @@ Pixeletica is a tool for converting images into Minecraft block art. This guide 
 
 ### Standard Installation
 
-1.  Download the latest version of Pixeletica from [link to download].
-2.  Extract the downloaded archive to a directory of your choice.
-3.  Run the `pixeletica` executable.
+1. Download the latest version of Pixeletica from [link to download].
+2. Extract the downloaded archive to a directory of your choice.
+3. Run the `pixeletica` executable.
 
 ### Docker Installation
 
-1.  Install Docker Desktop from [https://www.docker.com/products/docker-desktop/](https://www.docker.com/products/docker-desktop/).
-2.  Clone the Pixeletica repository from [link to repository].
-3.  Navigate to the Pixeletica directory in your terminal.
-4.  Run `docker-compose up` to start the Pixeletica API and worker.
+1. Install Docker Desktop from [https://www.docker.com/products/docker-desktop/](https://www.docker.com/products/docker-desktop/).
+2. Clone the Pixeletica repository from [link to repository].
+3. Navigate to the Pixeletica directory in your terminal.
+4. Run `docker-compose up` to start the Pixeletica API and worker.
 
 ## Usage
 
@@ -35,16 +35,16 @@ The Pixeletica GUI can be used to convert images interactively. To use the GUI, 
 
 To start a conversion task, send a POST request to the `/api/conversion/start` endpoint with the following parameters:
 
-*   `image_url`: The URL of the image to convert.
-*   `dithering_algorithm`: The dithering algorithm to use.
-*   `color_palette`: The color palette to use.
-*   `output_format`: The output format to use.
-*   `x_orientation`: The X-axis orientation.
-*   `z_orientation`: The Z-axis orientation.
-*   `y_is_height`: Whether the Y-axis is the height.
-*   `scale`: The scale of the output.
-*   `split_x`: The number of horizontal splits.
-*   `split_z`: The number of vertical splits.
+* `image_url`: The URL of the image to convert.
+* `dithering_algorithm`: The dithering algorithm to use.
+* `color_palette`: The color palette to use.
+* `output_format`: The output format to use.
+* `x_orientation`: The X-axis orientation.
+* `z_orientation`: The Z-axis orientation.
+* `y_is_height`: Whether the Y-axis is the height.
+* `scale`: The scale of the output.
+* `split_x`: The number of horizontal splits.
+* `split_z`: The number of vertical splits.
 
 ### Check Conversion Status
 
@@ -64,30 +64,30 @@ To download the files for a conversion task, send a GET request to the `/api/con
 
 Dithering algorithms are used to reduce the number of colors in an image while minimizing the appearance of banding. Pixeletica supports the following dithering algorithms:
 
-*   `no-dither`: Simple color mapping to the nearest color.
-*   `floyd-steinberg`: Floyd-Steinberg dithering.
-*   `ordered-dither`: Ordered dithering with Bayer matrices.
-*   `random-dither`: Random dithering with noise.
+* `no-dither`: Simple color mapping to the nearest color.
+* `floyd-steinberg`: Floyd-Steinberg dithering.
+* `ordered-dither`: Ordered dithering with Bayer matrices.
+* `random-dither`: Random dithering with noise.
 
 ### Color Palettes
 
 Color palettes are used to map the colors in an image to Minecraft blocks. Pixeletica supports the following color palettes:
 
-*   `minecraft`: The standard Minecraft block color palette.
+* `minecraft`: The standard Minecraft block color palette.
 
 ### Output Formats
 
 Output formats are used to specify the format of the output file. Pixeletica supports the following output formats:
 
-*   `png`: PNG image.
+* `png`: PNG image.
 
 ### Orientation Options
 
 Orientation options are used to specify the orientation of the output. Pixeletica supports the following orientation options:
 
-*   `x`: X-axis orientation.
-*   `z`: Z-axis orientation.
-*   `y_is_height`: Whether the Y-axis is the height.
+* `x`: X-axis orientation.
+* `z`: Z-axis orientation.
+* `y_is_height`: Whether the Y-axis is the height.
 
 ### Scale Option
 

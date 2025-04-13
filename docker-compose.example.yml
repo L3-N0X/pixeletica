@@ -1,58 +1,83 @@
 version: '3.8'
 
 # This is an example override file that shows all available configuration options
-# Copy to docker-compose.override.yml and modify as needed
+# You can either:
+# 1. Copy to docker-compose.override.yml and modify as needed for local development
+# 2. Use environment variables to configure the main docker-compose.yml file
+# 3. Create a .env file with your environment variables
 
 services:
   api:
+    # Container image configuration
+    image: ghcr.io/L3-N0X/pixeletica-api:latest
+    
+    # Port configuration
+    ports:
+      - "8000:8000"  # Change first number to use different host port
+      
     environment:
       # API configuration
       - PIXELETICA_API_HOST=0.0.0.0 
       - PIXELETICA_API_PORT=8000
       - REDIS_URL=redis://redis:6379/0
+      - WAIT_FOR_REDIS=true
       
-      # Enable debug output
-      # - LOG_LEVEL=debug
+      # Log level configuration
+      - LOG_LEVEL=info  # Options: debug, info, warning, error, critical
       
-      # Additional API settings
-      # - CORS_ORIGINS=http://localhost:3000,https://example.com
-      # - MAX_UPLOAD_SIZE=10485760  # 10MB
+      # Upload limits
+      - MAX_UPLOAD_SIZE=10485760  # 10MB default
       
-    # Uncomment to restart automatically on failure
-    # restart: always
-    
-    # Uncomment to expose additional ports
-    # ports:
-    #  - "8000:8000"
-    
-    # Uncomment to mount source code for development
+      # Security settings
+      - CORS_ORIGINS=http://localhost:3000,https://example.com
+      
+    # Development volume mounts (uncomment for local development)
     # volumes:
-    #  - ./pixeletica:/app/pixeletica
-    #  - pixeletica_data:/app/tasks
+    #  - ./src:/app/src
+    #  - pixeletica_data:/app/out/api_tasks
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   worker:
+    # Container image configuration
+    image: ghcr.io/L3-N0X/pixeletica-worker:latest
+    
     environment:
       # Worker configuration
       - REDIS_URL=redis://redis:6379/0
+      - WAIT_FOR_REDIS=true
+      - LOG_LEVEL=info  # Options: debug, info, warning, error, critical
       
       # Concurrency settings
-      # - CELERY_CONCURRENCY=4  # Number of worker processes
+      - CELERY_CONCURRENCY=2  # Number of worker processes
       
       # Task time limits
-      # - CELERY_TASK_TIME_LIMIT=3600  # 1 hour
-      # - CELERY_TASK_SOFT_TIME_LIMIT=3000  # 50 minutes
+      - CELERY_TASK_TIME_LIMIT=3600  # 1 hour
+      - CELERY_TASK_SOFT_TIME_LIMIT=3000  # 50 minutes
       
-      # Additional worker settings
-      # - LOG_LEVEL=info
-      # - CELERY_MAX_TASKS_PER_CHILD=100
-    
-    # Uncomment to restart automatically on failure
-    # restart: always
-    
-    # Uncomment to mount source code for development
+    # Development volume mounts (uncomment for local development)
     # volumes:
-    #  - ./pixeletica:/app/pixeletica
-    #  - pixeletica_data:/app/tasks
+    #  - ./src:/app/src
+    #  - pixeletica_data:/app/out/api_tasks
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      replicas: 1  # Set to higher number for more parallelism
 
   redis:
     # Use Alpine for smaller image or full Redis for more features
@@ -69,3 +94,20 @@ services:
     # volumes:
     #  - ./config/redis.conf:/usr/local/etc/redis/redis.conf
     #  - redis_data:/data
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+# Volume configuration
+volumes:
+  pixeletica_data:
+    # Optional: specify a custom name
+    # name: custom_pixeletica_data_name
+  
+  redis_data:
+    # Optional: specify a custom name
+    # name: custom_redis_data_name

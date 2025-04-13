@@ -5,6 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: ${DOCKER_REGISTRY:-ghcr.io}/${DOCKER_NAMESPACE:-your-username}/pixeletica-api:${TAG:-latest}
     ports:
       - "${PIXELETICA_API_PORT:-8000}:8000"
     environment:
@@ -12,8 +13,11 @@ services:
       - PIXELETICA_API_PORT=8000
       - REDIS_URL=redis://redis:6379/0
       - WAIT_FOR_REDIS=true
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - MAX_UPLOAD_SIZE=${MAX_UPLOAD_SIZE:-10485760}  # 10MB default
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
     volumes:
-      - pixeletica_data:/app/tasks
+      - pixeletica_data:/app/out/api_tasks
     depends_on:
       - redis
     restart: unless-stopped
@@ -23,16 +27,29 @@ services:
       timeout: 10s
       retries: 5
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '${API_CPU_LIMIT:-1}'
+          memory: ${API_MEMORY_LIMIT:-1G}
+        reservations:
+          cpus: '${API_CPU_RESERVATION:-0.25}'
+          memory: ${API_MEMORY_RESERVATION:-256M}
 
   worker:
     build:
       context: .
-      dockerfile: docker/worker.dockerfile
+      dockerfile: src/docker/worker.dockerfile
+    image: ${DOCKER_REGISTRY:-ghcr.io}/${DOCKER_NAMESPACE:-your-username}/pixeletica-worker:${TAG:-latest}
     environment:
       - REDIS_URL=redis://redis:6379/0
       - WAIT_FOR_REDIS=true
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - CELERY_CONCURRENCY=${CELERY_CONCURRENCY:-2}
+      - CELERY_TASK_TIME_LIMIT=${CELERY_TASK_TIME_LIMIT:-3600}
+      - CELERY_TASK_SOFT_TIME_LIMIT=${CELERY_TASK_SOFT_TIME_LIMIT:-3000}
     volumes:
-      - pixeletica_data:/app/tasks
+      - pixeletica_data:/app/out/api_tasks
     depends_on:
       - redis
     restart: unless-stopped
@@ -42,10 +59,19 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '${WORKER_CPU_LIMIT:-2}'
+          memory: ${WORKER_MEMORY_LIMIT:-2G}
+        reservations:
+          cpus: '${WORKER_CPU_RESERVATION:-0.5}'
+          memory: ${WORKER_MEMORY_RESERVATION:-512M}
+      replicas: ${WORKER_REPLICAS:-1}
 
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --maxmemory ${REDIS_MEMORY_LIMIT:-256mb} --maxmemory-policy ${REDIS_MEMORY_POLICY:-volatile-lru}
     volumes:
       - redis_data:/data
     restart: unless-stopped
@@ -54,7 +80,14 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '${REDIS_CPU_LIMIT:-0.5}'
+          memory: ${REDIS_MEMORY_LIMIT:-256M}
 
 volumes:
   pixeletica_data:
+    name: ${PIXELETICA_DATA_VOLUME:-pixeletica_data}
   redis_data:
+    name: ${REDIS_DATA_VOLUME:-pixeletica_redis_data}
