@@ -13,7 +13,6 @@ from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from typing import Dict, Any, List
 from fastapi_limiter import FastAPILimiter
-from fastapi_limiter.middleware import RateLimitMiddleware
 import redis.asyncio as redis
 
 from pixeletica.api.routes import conversion, maps
@@ -45,9 +44,6 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
-
-# Add rate limit middleware
-app.add_middleware(RateLimitMiddleware, limit_value=RATE_LIMIT)
 
 # Add routes
 app.include_router(conversion.router)

@@ -15,4 +15,5 @@ dependencies = [
     "uuid>=1.30",
     "pydantic>=2.5.2",
     "setuptools>=78.1.0",
+    "fastapi-limiter>=0.1.6",
 ]
