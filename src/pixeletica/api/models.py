@@ -17,6 +17,11 @@ class DitherAlgorithm(str, Enum):
     ORDERED = "ordered"
     RANDOM = "random"
 
+    @classmethod
+    def get_default(cls) -> "DitherAlgorithm":
+        """Return the default dithering algorithm."""
+        return cls.FLOYD_STEINBERG
+
 
 class TaskStatus(str, Enum):
     """Possible states of a conversion task."""

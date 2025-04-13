@@ -133,6 +133,33 @@ Parameters:
 }
 ```
 
+### Get Quick Preview
+
+**Endpoint**: `GET /api/conversion/preview`
+
+Generates a quick preview of a converted image with specified dimensions and dithering algorithm. This endpoint creates a blank image of the specified size, applies the selected dithering algorithm, and returns the resulting image directly. The endpoint has a built-in timeout mechanism to prevent large images from consuming excessive resources.
+
+**Query Parameters**:
+
+- `width`: (required) Width of the preview image in pixels
+- `height`: (required) Height of the preview image in pixels
+- `algorithm`: (optional) Dithering algorithm to use: "floyd_steinberg" (default), "ordered", or "random"
+
+**Response**: The converted image as a PNG file.
+
+**Error Responses**:
+
+- `400 Bad Request`: If the dimensions are too large or invalid
+- `408 Request Timeout`: If the conversion process exceeds the timeout limit (large images)
+
+**Example**:
+
+```http
+GET /api/conversion/preview?width=100&height=80&algorithm=floyd_steinberg
+```
+
+This will return a PNG image with the specified dimensions and dithering algorithm applied.
+
 ### Check Conversion Status
 
 **Endpoint**: `GET /api/conversion/{taskId}`

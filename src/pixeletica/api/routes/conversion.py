@@ -10,6 +10,8 @@ This module defines the FastAPI endpoints for:
 
 import base64
 import mimetypes
+import asyncio
+import io
 from typing import Optional
 
 from fastapi import (
@@ -21,17 +23,31 @@ from fastapi import (
     HTTPException,
     UploadFile,
     status,
+    Query,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi_limiter.depends import RateLimiter
 
-from src.pixeletica.api.config import MAX_FILE_SIZE  # Import from config
+from src.pixeletica.api.config import (
+    MAX_FILE_SIZE,
+    PREVIEW_CONVERSION_TIMEOUT,
+)  # Import from config
 from src.pixeletica.api.models import (
     FileListResponse,
     SelectiveDownloadRequest,
     TaskResponse,
+    DitherAlgorithm,
 )
 from src.pixeletica.api.services import storage, task_queue
+from src.pixeletica.dithering import get_algorithm_by_name
+from src.pixeletica.image_ops import resize_image
+from PIL import Image
+import numpy as np
+import time
+import logging
+
+# Set up logging
+logger = logging.getLogger("pixeletica.api.routes.conversion")
 
 # Initialize router
 router = APIRouter(prefix="/conversion", tags=["conversion"])
@@ -47,6 +63,173 @@ async def validate_file_size(file: UploadFile = File(...)):
     # Reset stream position after size check if needed, depending on subsequent reads
     await file.seek(0)
     return file
+
+
+async def apply_dithering_with_timeout(
+    width: int, height: int, algorithm: DitherAlgorithm
+):
+    """
+    Create a blank image and apply dithering with timeout.
+
+    Args:
+        width: Image width in pixels
+        height: Image height in pixels
+        algorithm: Dithering algorithm to use
+
+    Returns:
+        PIL Image with dithering applied
+
+    Raises:
+        asyncio.TimeoutError: If processing exceeds the timeout
+        ValueError: If algorithm is not found
+    """
+    start_time = time.time()
+
+    # Check if dimensions are reasonable
+    pixel_count = width * height
+    if pixel_count > 1000000:  # 1 million pixels (e.g., 1000x1000)
+        logger.warning(
+            f"Large preview image requested: {width}x{height} = {pixel_count} pixels"
+        )
+
+    # Create a blank white image
+    image = Image.new("RGB", (width, height), color="white")
+
+    # Get the dithering algorithm function
+    dither_func, _ = get_algorithm_by_name(algorithm.value)
+    if not dither_func:
+        raise ValueError(f"Unknown dithering algorithm: {algorithm}")
+
+    # Apply dithering with timeout
+    result_img = None
+    block_ids = None
+
+    # Define the processing function
+    async def process_image():
+        nonlocal result_img, block_ids
+        # Run dithering in a separate thread to not block the event loop
+        loop = asyncio.get_event_loop()
+        result_img, block_ids = await loop.run_in_executor(None, dither_func, image)
+
+    # Run with timeout
+    await asyncio.wait_for(process_image(), timeout=PREVIEW_CONVERSION_TIMEOUT)
+
+    processing_time = time.time() - start_time
+    logger.info(
+        f"Preview generation took {processing_time:.2f} seconds for {width}x{height} image"
+    )
+
+    return result_img
+
+
+# Note: The /preview endpoint must be defined BEFORE any /{param} routes
+# to avoid routing conflicts in FastAPI
+@router.get(
+    "/preview",
+    summary="Generate Quick Preview Image",
+    description="Creates a preview of an image with the specified dimensions and dithering algorithm. "
+    "Returns the result directly as a PNG image. Has a built-in timeout mechanism for large images.",
+    response_description="PNG image with the dithering algorithm applied",
+    responses={
+        200: {
+            "description": "Converted image with dithering applied",
+            "content": {"image/png": {}},
+        },
+        400: {
+            "description": "Bad Request - Invalid dimensions or algorithm",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Image dimensions too large for preview. Please reduce width and/or height."
+                    }
+                }
+            },
+        },
+        408: {
+            "description": "Request Timeout - Processing took too long (large image)",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Preview generation timed out after 3 seconds. Image may be too large for preview."
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Internal Server Error",
+            "content": {
+                "application/json": {"example": {"detail": "Error generating preview"}}
+            },
+        },
+    },
+    tags=["conversion"],
+)
+async def get_preview_conversion(
+    width: int = Query(..., gt=0, description="Image width in pixels"),
+    height: int = Query(..., gt=0, description="Image height in pixels (minimum: 1)"),
+    algorithm: DitherAlgorithm = Query(
+        DitherAlgorithm.FLOYD_STEINBERG,
+        description="Dithering algorithm to apply (floyd_steinberg, ordered, or random)",
+    ),
+):
+    """
+    Generate a quick preview of a converted image with specified dimensions and dithering.
+
+    This endpoint creates a blank image with the specified dimensions, applies the selected
+    dithering algorithm, and returns the result directly. For large images, there's a timeout
+    to abort processing if it takes too long.
+
+    - Required: width, height
+    - Optional: algorithm (default: floyd_steinberg)
+
+    Returns the converted image directly as PNG.
+
+    Raises:
+        HTTPException(400): If the dimensions are too large or algorithm is invalid
+        HTTPException(408): If the conversion process times out
+        HTTPException(500): If there's an internal server error
+    """
+    try:
+        # Check if dimensions are reasonable (additional to the validation in the helper function)
+        pixel_count = width * height
+        if pixel_count > 10000000:  # 10 million pixels (e.g., 3162x3162)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Image dimensions too large for preview. Please reduce width and/or height.",
+            )
+
+        # Apply dithering with timeout
+        try:
+            result_img = await apply_dithering_with_timeout(width, height, algorithm)
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                detail=f"Preview generation timed out after {PREVIEW_CONVERSION_TIMEOUT} seconds. Image may be too large for preview.",
+            )
+
+        # Convert the image to bytes
+        img_byte_arr = io.BytesIO()
+        result_img.save(img_byte_arr, format="PNG")
+        img_byte_arr.seek(0)
+
+        # Return the image
+        return StreamingResponse(
+            content=img_byte_arr,
+            media_type="image/png",
+            headers={"Content-Disposition": "inline; filename=preview.png"},
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Error generating preview: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating preview: {str(e)}",
+        )
 
 
 @router.post(
@@ -70,8 +253,6 @@ async def start_conversion(
     """
     Start a new image conversion task.
 
-    This endpoint accepts an image and configuration parameters,
-    creates a new task, and returns a task ID for status tracking.
     This endpoint accepts an image and configuration parameters,
     creates a new task, and returns a task ID for status tracking.
     """

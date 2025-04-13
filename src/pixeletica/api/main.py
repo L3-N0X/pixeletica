@@ -153,7 +153,11 @@ def start_api():
 
     logger.info(f"Starting Pixeletica API on {host}:{port}")
     uvicorn.run(
-        "pixeletica.api.main:app", host=host, port=port, reload=True, log_level="info"
+        "src.pixeletica.api.main:app",
+        host=host,
+        port=port,
+        reload=True,
+        log_level="info",
     )
 
 
