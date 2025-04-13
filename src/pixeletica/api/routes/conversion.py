@@ -8,37 +8,45 @@ This module defines the FastAPI endpoints for:
 - Downloading files
 """
 
-import os
+import base64
 import mimetypes
-from typing import List, Optional
-from pathlib import Path
+from typing import Optional
+
 from fastapi import (
     APIRouter,
-    HTTPException,
     BackgroundTasks,
-    status,
-    Query,
-    Body,
-    UploadFile,
-    File,
     Depends,
+    File,
     Form,
+    HTTPException,
+    UploadFile,
+    status,
 )
-from fastapi.responses import FileResponse, StreamingResponse
-import base64
+from fastapi.responses import FileResponse
+from fastapi_limiter.depends import RateLimiter
 
+from pixeletica.api.config import MAX_FILE_SIZE  # Import from config
 from pixeletica.api.models import (
-    ConversionRequest,
-    TaskResponse,
     FileListResponse,
     SelectiveDownloadRequest,
+    TaskResponse,
 )
-from pixeletica.api.services import task_queue, storage
-from fastapi_limiter.depends import RateLimiter
-from pixeletica.api.main import MAX_FILE_SIZE
+from pixeletica.api.services import storage, task_queue
 
 # Initialize router
 router = APIRouter(prefix="/conversion", tags=["conversion"])
+
+
+async def validate_file_size(file: UploadFile = File(...)):
+    # Ensure the file size check uses the imported constant
+    if file.size > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File size {file.size} bytes exceeds limit of {MAX_FILE_SIZE} bytes.",
+        )
+    # Reset stream position after size check if needed, depending on subsequent reads
+    await file.seek(0)
+    return file
 
 
 @router.post(

@@ -7,18 +7,18 @@ This module defines the FastAPI endpoints for:
 - Fetching map images and tiles
 """
 
-import os
 import json
 import logging
+import os
 from datetime import datetime
-from typing import Dict, Any, List, Optional
-from pathlib import Path
-
-from fastapi import APIRouter, HTTPException, status, Depends
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-import redis.asyncio as redis
-from fastapi_limiter.depends import RateLimiter
 from io import BytesIO
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import redis.asyncio as redis
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi_limiter.depends import RateLimiter
 
 from pixeletica.api.models import MapInfo, MapListResponse, MapMetadata
 from pixeletica.api.services import storage

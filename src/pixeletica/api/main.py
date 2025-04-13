@@ -5,20 +5,21 @@ This module sets up the FastAPI application, includes routes,
 and handles CORS, documentation, and middleware.
 """
 
-import os
-import logging
-from fastapi import FastAPI, Request, status, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse
-from fastapi.openapi.docs import get_swagger_ui_html
-from typing import Dict, Any, List
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi_limiter import FastAPILimiter
+from fastapi_limiter.depends import RateLimiter
 import redis.asyncio as redis
-
+from typing import Dict, Any
+from fastapi.openapi.docs import get_swagger_ui_html
 from pixeletica.api.routes import conversion, maps
+from pixeletica.api.config import MAX_FILE_SIZE  # Import from config
+import logging
+import os
+import time
 
 # Constants
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 RATE_LIMIT = "100/minute"  # 100 requests per minute
 
 # Configure logging
@@ -94,6 +95,26 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "An internal server error occurred"},
     )
+
+
+# Middleware to check content length
+@app.middleware("http")
+async def check_content_length(request: Request, call_next):
+    """
+    Middleware to check the content length of incoming requests.
+    """
+    content_length = request.headers.get("content-length")
+    if (
+        content_length and int(content_length) > MAX_FILE_SIZE
+    ):  # Use imported MAX_FILE_SIZE
+        return JSONResponse(
+            status_code=413,
+            content={
+                "detail": "Request content length exceeds the maximum allowed size"
+            },
+        )
+    response = await call_next(request)
+    return response
 
 
 # Add request validation middleware

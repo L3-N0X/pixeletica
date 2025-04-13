@@ -8,18 +8,18 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Dict, Optional, Union, Any
 from pathlib import Path
-from PIL import Image
+from typing import Any, Dict, Optional, Union
 
 from celery import Celery
+
+from pixeletica.api.models import TaskStatus
 from pixeletica.api.services import storage
-from pixeletica.image_ops import load_image, resize_image
 from pixeletica.dithering import get_algorithm_by_name
+from pixeletica.export.export_manager import export_processed_image
+from pixeletica.image_ops import load_image, resize_image
 from pixeletica.rendering.block_renderer import render_blocks_from_block_ids
 from pixeletica.schematic_generator import generate_schematic
-from pixeletica.export.export_manager import export_processed_image
-from pixeletica.api.models import TaskStatus
 
 # Configure Celery
 redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")

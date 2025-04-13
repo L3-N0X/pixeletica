@@ -8,19 +8,19 @@ This module handles:
 - Providing file information
 """
 
-import os
-import json
 import base64
-import shutil
+import json
+import logging
 import mimetypes
+import os
+import shutil
+import uuid
 from datetime import datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Union
-from io import BytesIO
+
 from PIL import Image
-import uuid
-import logging
-from functools import lru_cache
 
 # Set up logging
 logger = logging.getLogger("pixeletica.api.storage")
