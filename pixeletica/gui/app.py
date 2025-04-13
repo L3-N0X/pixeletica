@@ -165,11 +165,6 @@ class DitherApp:
             row=0, column=2, rowspan=2, padx=5, pady=5, sticky=tk.W
         )
 
-    def _create_dimensions_coordinates_section(self, parent):
-        """Create dimensions and Minecraft coordinates section frame."""
-        # This method is obsolete, replaced by _create_dimensions_section
-        pass
-
     def _create_dithering_options(self, parent):
         """Create dithering algorithm options."""
         dither_frame = ttk.LabelFrame(parent, text="Dithering Algorithm", padding="10")
@@ -263,11 +258,6 @@ class DitherApp:
                 if isinstance(child, ttk.Entry) or isinstance(child, ttk.Combobox):
                     child.configure(state="disabled")
 
-    def _create_export_settings(self, parent):
-        """Create export settings section."""
-        # This method is no longer used as we're adding the ExportSettingsFrame directly
-        pass
-
     def _create_action_buttons(self, parent):
         """Create action buttons."""
         btn_frame = ttk.Frame(parent)
@@ -276,11 +266,8 @@ class DitherApp:
         ttk.Button(btn_frame, text="Preview", command=self.preview_dithering).pack(
             side=tk.LEFT, padx=5
         )
-        ttk.Button(btn_frame, text="Export", command=self.export_images).pack(
-            side=tk.RIGHT, padx=5
-        )
         ttk.Button(
-            btn_frame, text="Process and Save", command=self.process_and_save
+            btn_frame, text="Process and Export", command=self.process_and_export
         ).pack(side=tk.RIGHT, padx=5)
 
     def _create_status_bar(self, parent):
@@ -540,12 +527,16 @@ class DitherApp:
                             # Get export settings for coordinates
                             export_settings = self.export_settings.get_export_settings()
 
+                            # Get Y-coordinate from export settings if available
+                            origin_y = export_settings.get("origin_y", 0)
+
                             schematic_path = generate_schematic(
                                 block_ids,
                                 self.img_path_var.get(),
                                 algorithm_name,
                                 metadata,
                                 origin_x=export_settings["origin_x"],
+                                origin_y=origin_y,  # Use Y-coordinate if available
                                 origin_z=export_settings["origin_z"],
                             )
 
@@ -554,6 +545,150 @@ class DitherApp:
                             self.status_var.set(f"Error generating schematic: {e}")
                 except Exception as e:
                     self.status_var.set(f"Error saving image: {e}")
+
+    def process_and_export(self):
+        """Process, save and export the image in one operation."""
+        if not self.img_path_var.get():
+            self.status_var.set("Error: No image selected")
+            return
+
+        # Step 1: Resize image
+        resized_img = self.resize_image_from_inputs()
+        if not resized_img:
+            return
+
+        # Step 2: Apply dithering
+        self.status_var.set("Applying dithering...")
+        self.root.update_idletasks()
+
+        dithered_img, algorithm_name, metadata_info = self.apply_dithering(resized_img)
+        if not dithered_img:
+            self.status_var.set("Failed to apply dithering algorithm")
+            return
+
+        # Save dithered image and display it
+        try:
+            block_ids = metadata_info.get("block_ids") if metadata_info else None
+            processing_time = (
+                metadata_info.get("processing_time", 0) if metadata_info else 0
+            )
+
+            saved_path = save_dithered_image(
+                dithered_img,
+                self.img_path_var.get(),
+                algorithm_name,
+                block_ids=block_ids,
+                processing_time=processing_time,
+            )
+            self.status_var.set(
+                f"Saved: {saved_path} (processing time: {processing_time:.2f}s)"
+            )
+            self.dithered_img = dithered_img
+            self.display_image(dithered_img)
+            self.block_ids = block_ids
+
+            # Step 3: Export with textures
+            export_settings = self.export_settings.get_export_settings()
+            if any(export_settings["export_types"]):
+                self.status_var.set("Rendering blocks with textures...")
+                self.root.update_idletasks()
+
+                # Render blocks with textures
+                block_image = render_blocks_from_block_ids(block_ids)
+
+                if block_image:
+                    self.status_var.set("Exporting images...")
+                    self.root.update_idletasks()
+
+                    # Get base name for export
+                    base_name = os.path.splitext(
+                        os.path.basename(self.img_path_var.get())
+                    )[0]
+
+                    # Apply version options from line settings
+                    version_options = export_settings["version_options"]
+
+                    # Export with the configured settings
+                    export_results = export_processed_image(
+                        block_image,
+                        base_name,
+                        export_types=export_settings["export_types"],
+                        origin_x=export_settings["origin_x"],
+                        origin_z=export_settings["origin_z"],
+                        draw_chunk_lines=export_settings["draw_chunk_lines"],
+                        chunk_line_color=export_settings["chunk_line_color"],
+                        draw_block_lines=export_settings["draw_block_lines"],
+                        block_line_color=export_settings["block_line_color"],
+                        split_count=export_settings["split_count"],
+                        version_options=version_options,
+                        algorithm_name=algorithm_name,
+                    )
+
+                    # Update the metadata with export information
+                    metadata_path = os.path.splitext(saved_path)[0] + ".json"
+                    if os.path.exists(metadata_path):
+                        from pixeletica.metadata import (
+                            load_metadata_json,
+                            save_metadata_json,
+                        )
+
+                        metadata = load_metadata_json(metadata_path)
+                        metadata["export_settings"] = export_settings
+                        metadata["exports"] = export_results
+                        save_metadata_json(metadata, saved_path)
+
+                    # Step 4: Generate schematic if requested
+                    if self.generate_schematic_var.get():
+                        try:
+                            # Set default name if empty
+                            if not self.schematic_name_var.get():
+                                image_name = os.path.basename(self.img_path_var.get())
+                                base_name = os.path.splitext(image_name)[0]
+                                self.schematic_name_var.set(base_name)
+
+                            # Import schematic generator
+                            from pixeletica.schematic_generator import (
+                                generate_schematic,
+                            )
+
+                            # Prepare metadata
+                            schematic_metadata = {
+                                "author": self.author_var.get(),
+                                "name": self.schematic_name_var.get(),
+                                "description": self.description_var.get(),
+                            }
+
+                            # Generate schematic
+                            self.status_var.set("Generating Litematica schematic...")
+                            self.root.update_idletasks()
+
+                            # Get Y-coordinate from export settings if available
+                            origin_y = export_settings.get("origin_y", 0)
+
+                            # Generate schematic with origin coordinates
+                            schematic_path = generate_schematic(
+                                block_ids,
+                                self.img_path_var.get(),
+                                algorithm_name,
+                                schematic_metadata,
+                                origin_x=export_settings["origin_x"],
+                                origin_y=origin_y,  # Use Y-coordinate if available
+                                origin_z=export_settings["origin_z"],
+                            )
+
+                            self.status_var.set(
+                                f"Process complete! Exported images to: {export_results['export_dir']} and schematic to: {schematic_path}"
+                            )
+                        except Exception as e:
+                            self.status_var.set(f"Error generating schematic: {e}")
+                    else:
+                        self.status_var.set(
+                            f"Process complete! Exported images to: {export_results['export_dir']}"
+                        )
+                else:
+                    self.status_var.set("Error: Failed to render blocks with textures")
+        except Exception as e:
+            self.status_var.set(f"Error during processing: {e}")
 
     def export_images(self):
         """Export images using current export settings."""
@@ -664,20 +799,19 @@ class DitherApp:
 
             img_width, img_height = img.size
 
-            # Calculate scale factor to fit image within canvas
-            scale_width = canvas_width / img_width if img_width > canvas_width else 1
-            scale_height = (
-                canvas_height / img_height if img_height > canvas_height else 1
-            )
-            scale = min(scale_width, scale_height)
+            # Calculate scale factor to fit image within canvas - always scale to fill the available space
+            scale_width = (
+                canvas_width / img_width
+            )  # Always calculate scaling factor, even for small images
+            scale_height = canvas_height / img_height
+            scale = min(
+                scale_width, scale_height
+            )  # Use the smaller scaling factor to keep aspect ratio
 
-            # Resize image for display - prioritize filling the width
-            if scale < 1:
-                display_width = int(img_width * scale)
-                display_height = int(img_height * scale)
-                display_img = img.resize((display_width, display_height), Image.LANCZOS)
-            else:
-                display_img = img.copy()
+            # Always resize image to fill available space, using NEAREST for pixel art clarity
+            display_width = int(img_width * scale)
+            display_height = int(img_height * scale)
+            display_img = img.resize((display_width, display_height), Image.NEAREST)
 
             # Convert to PhotoImage and display
             self.photo_img = ImageTk.PhotoImage(display_img)

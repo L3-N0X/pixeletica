@@ -3,46 +3,35 @@
 Pixeletica - A Minecraft block color image processor.
 
 This is the main entry point for the Pixeletica application.
-It supports both GUI and CLI modes.
+It supports GUI, API, and CLI operating modes.
+
+Available modes:
+- GUI (default): A graphical user interface for interactive use
+- API: A FastAPI-based API server for programmatic access
+- Debug: A command-line interface for debugging purposes
 """
 
 import os
 import sys
-from PIL import Image, ImageTk
+import logging
 
 # Import Pixeletica modules
-from pixeletica.block_utils.block_loader import load_block_colors
-from pixeletica.cli import run_cli
-from pixeletica.gui.app import DitherApp
+from pixeletica.cli import main as cli_main
 
 
-def ensure_output_dir():
-    """Ensure that the output directories exist."""
+def ensure_output_dirs():
+    """Ensure that the required output directories exist."""
     os.makedirs("./out/dithered", exist_ok=True)
     os.makedirs("./out/schematics", exist_ok=True)
-
-
-def run_gui():
-    """Run the application in GUI mode."""
-    try:
-        import tkinter as tk
-    except ImportError:
-        print("Error: tkinter is not available. Running in CLI mode instead.")
-        run_cli()
-        return
-
-    # Create and run the GUI
-    root = tk.Tk()
-    app = DitherApp(root)
-    root.mainloop()
+    os.makedirs("./out/api_tasks", exist_ok=True)
 
 
 def main():
     """Main entry point for the application."""
-    print("==== Pixeletica Minecraft Dithering ====")
+    print("==== Pixeletica Minecraft Block Art Generator ====")
 
-    # Ensure output directory exists
-    ensure_output_dir()
+    # Ensure output directories exist
+    ensure_output_dirs()
 
     # Add support for --silent command line option
     silent_mode = "--silent" in sys.argv
@@ -53,8 +42,8 @@ def main():
         sys.stdout = open(os.devnull, "w")
 
     try:
-        # Always run GUI by default
-        run_gui()
+        # Hand off control to the CLI module, which handles mode selection
+        cli_main()
     except KeyboardInterrupt:
         print("\nExiting Pixeletica...")
     except Exception as e:

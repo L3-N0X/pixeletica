@@ -1,10 +1,17 @@
 [project]
 name = "pixeletica"
 version = "0.1.0"
-description = "Add your description here"
+description = "Minecraft block art generator from images"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "litemapy>=0.10.0b0",
     "pillow>=11.1.0",
+    "fastapi>=0.104.1",
+    "uvicorn>=0.24.0",
+    "python-multipart>=0.0.6",
+    "celery>=5.3.4",
+    "redis>=5.0.1",
+    "uuid>=1.30",
+    "pydantic>=2.5.2",
 ]

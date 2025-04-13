@@ -63,6 +63,8 @@ Enter the top-left X,Z coordinates in the Minecraft world. These coordinates det
 
 ## Installation
 
+### Standard Installation
+
 1. Clone this repository
 2. Install dependencies: `pip install -r requirements.txt`
 3. Place Minecraft textures in `./minecraft/texturepack/minecraft/textures/block`
@@ -73,6 +75,36 @@ You can also use uv for installation (recommended):
 ```bash
 uv install -r requirements.txt
 uv run main.py
+```
+
+### Docker Installation (API Mode)
+
+Pixeletica API can be run using Docker containers for easy deployment:
+
+1. Make sure Docker and Docker Compose are installed on your system
+2. Clone this repository
+3. Start the services:
+
+```bash
+docker-compose up -d
+```
+
+This will start the API server, Celery worker, and Redis in separate containers.
+
+For configuration options and advanced usage, see the [Docker documentation](./docker/README.md).
+
+#### Docker Configuration
+
+- API is accessible at `http://localhost:8000` by default
+- Configure via environment variables or docker-compose.override.yml
+- Data is persisted in Docker volumes
+
+```bash
+# Basic usage
+docker-compose up -d                    # Start all services
+docker-compose down                     # Stop all services
+docker-compose logs -f                  # View logs
+docker-compose up -d --scale worker=3   # Run with 3 worker instances
 ```
 
 ## Requirements

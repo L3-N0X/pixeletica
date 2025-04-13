@@ -28,6 +28,7 @@ class ExportSettingsFrame(ttk.Frame):
 
         # Initialize variables
         self.origin_x_var = tk.IntVar(value=0)
+        self.origin_y_var = tk.IntVar(value=0)  # Added Y coordinate
         self.origin_z_var = tk.IntVar(value=0)
 
         self.chunk_lines_var = tk.BooleanVar(value=False)
@@ -67,16 +68,31 @@ class ExportSettingsFrame(ttk.Frame):
             row=0, column=1, padx=5, pady=2
         )
 
-        ttk.Label(coord_frame, text="Origin Z:").grid(
+        ttk.Label(coord_frame, text="Origin Y:").grid(
             row=1, column=0, padx=5, pady=2, sticky=tk.W
         )
-        ttk.Entry(coord_frame, textvariable=self.origin_z_var, width=6).grid(
+        ttk.Entry(coord_frame, textvariable=self.origin_y_var, width=6).grid(
             row=1, column=1, padx=5, pady=2
         )
 
-        ttk.Label(
-            coord_frame, text="(Coordinates of the top-left corner in Minecraft world)"
-        ).grid(row=0, column=2, rowspan=2, padx=5, pady=2, sticky=tk.W)
+        ttk.Label(coord_frame, text="Origin Z:").grid(
+            row=2, column=0, padx=5, pady=2, sticky=tk.W
+        )
+        ttk.Entry(coord_frame, textvariable=self.origin_z_var, width=6).grid(
+            row=2, column=1, padx=5, pady=2
+        )
+
+        # Updated explanation with clearer text about schematic placement
+        explanation = ttk.Label(
+            coord_frame,
+            text=(
+                "These coordinates define the schematic placement offset.\n"
+                "When the schematic is placed at world origin (0,0,0),\n"
+                "all blocks will have their correct absolute coordinates."
+            ),
+            justify=tk.LEFT,
+        )
+        explanation.grid(row=0, column=2, rowspan=3, padx=5, pady=2, sticky=tk.W)
 
     def create_line_settings(self):
         """Create line settings UI."""
@@ -224,11 +240,6 @@ class ExportSettingsFrame(ttk.Frame):
 
         ttk.Label(split_frame, text="equal parts").pack(side=tk.LEFT)
 
-    def create_line_version_settings(self):
-        """Create line version settings UI with options for different line versions."""
-        # This functionality is now in create_line_settings
-        pass
-
     def _update_color_with_opacity(self, line_type):
         """Update the color with the current opacity value."""
         if line_type == "chunk":
@@ -328,6 +339,7 @@ class ExportSettingsFrame(ttk.Frame):
 
         return {
             "origin_x": self.origin_x_var.get(),
+            "origin_y": self.origin_y_var.get(),  # Include Y coordinate in settings
             "origin_z": self.origin_z_var.get(),
             "draw_chunk_lines": self.chunk_lines_var.get(),
             "chunk_line_color": self.chunk_line_color,

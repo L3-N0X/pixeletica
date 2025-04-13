@@ -9,7 +9,13 @@ import numpy as np
 
 
 def generate_schematic(
-    block_ids, image_name, algorithm_name, metadata=None, origin_x=0, origin_z=0
+    block_ids,
+    image_name,
+    algorithm_name,
+    metadata=None,
+    origin_x=0,
+    origin_y=0,
+    origin_z=0,
 ):
     """
     Generate a Litematica schematic from block IDs.
@@ -23,6 +29,7 @@ def generate_schematic(
             - description: Description of the schematic
             - name: Name of the schematic
         origin_x: X-coordinate in the Minecraft world to position the schematic
+        origin_y: Y-coordinate in the Minecraft world to position the schematic
         origin_z: Z-coordinate in the Minecraft world to position the schematic
 
     Returns:
@@ -51,7 +58,7 @@ def generate_schematic(
     # For a flat image, y=1 (height is always 1 block)
     # Setting the region's position based on user-specified origin
     # When the schematic is placed at (0,0,0), this will position the blocks at the correct coordinates
-    region = Region(origin_x, 0, origin_z, width, 1, height)
+    region = Region(origin_x, origin_y, origin_z, width, 1, height)
 
     # Create schematic from the region
     schematic = region.as_schematic(name=name, author=author, description=description)

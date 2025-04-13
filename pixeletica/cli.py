@@ -1,13 +1,17 @@
 """
 Command-line interface for Pixeletica.
 
-This module is kept as a fallback for debugging purposes only.
-The main interface is now GUI-based.
+This module provides different operating modes:
+- GUI (default): A graphical user interface for interactive use
+- API: A FastAPI-based API server for programmatic access
+- Debug: A command-line interface for debugging purposes
 """
 
 import os
 import sys
 import time
+import argparse
+import logging
 from pixeletica.block_utils.block_loader import load_block_colors
 from pixeletica.dithering import get_algorithm_by_name
 from pixeletica.image_ops import load_image, resize_image, save_dithered_image
@@ -320,3 +324,92 @@ def run_cli():
 
     except Exception as e:
         print(f"Error applying dithering: {e}")
+
+
+def run_api_server():
+    """
+    Start the Pixeletica API server.
+
+    This function starts a FastAPI server for programmatic access to Pixeletica.
+    """
+    # Import and run the API server
+    from pixeletica.api.main import start_api
+
+    start_api()
+
+
+def main():
+    """
+    Main entry point for Pixeletica with command-line argument parsing.
+    """
+    parser = argparse.ArgumentParser(
+        description="Pixeletica Minecraft block art generator"
+    )
+
+    # Add command-line arguments
+    parser.add_argument(
+        "--mode",
+        choices=["gui", "api", "debug"],
+        default="gui",
+        help="Operating mode: gui (default), api (server), or debug (command-line)",
+    )
+
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Host to bind the API server to (only applicable in API mode)",
+    )
+
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port to bind the API server to (only applicable in API mode)",
+    )
+
+    parser.add_argument(
+        "--log-level",
+        choices=["debug", "info", "warning", "error", "critical"],
+        default="info",
+        help="Logging level",
+    )
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Configure logging
+    numeric_level = getattr(logging, args.log_level.upper(), None)
+    logging.basicConfig(
+        level=numeric_level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    # Set environment variables for API mode if specified
+    if args.mode == "api":
+        os.environ["PIXELETICA_API_HOST"] = args.host
+        os.environ["PIXELETICA_API_PORT"] = str(args.port)
+
+    # Run the selected mode
+    if args.mode == "gui":
+        # Import GUI-related modules only when needed
+        from pixeletica.gui.app import DitherApp
+        import tkinter as tk
+
+        # Start the GUI
+        root = tk.Tk()
+        app = DitherApp(root)
+        root.mainloop()
+    elif args.mode == "api":
+        # Start the API server
+        run_api_server()
+    elif args.mode == "debug":
+        # Run the debug CLI
+        run_cli()
+    else:
+        # Should never happen due to argparse choices
+        print(f"Unknown mode: {args.mode}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

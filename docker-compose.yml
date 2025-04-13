@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${PIXELETICA_API_PORT:-8000}:8000"
+    environment:
+      - PIXELETICA_API_HOST=0.0.0.0
+      - PIXELETICA_API_PORT=8000
+      - REDIS_URL=redis://redis:6379/0
+      - WAIT_FOR_REDIS=true
+    volumes:
+      - pixeletica_data:/app/tasks
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.dockerfile
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - WAIT_FOR_REDIS=true
+    volumes:
+      - pixeletica_data:/app/tasks
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "celery", "-A", "pixeletica.api.services.task_queue.celery_app", "inspect", "ping", "-d", "celery@$$(hostname)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  pixeletica_data:
+  redis_data:

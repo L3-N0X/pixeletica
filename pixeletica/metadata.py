@@ -84,81 +84,73 @@ def create_metadata(
 
 def compress_block_data(block_data):
     """
-    Compress a 2D array of block IDs using run-length encoding with indexed blocks.
+    Prepare a 2D array of block IDs for storage in metadata.
 
-    This function converts the Minecraft block IDs to indices based on the order
-    in the block-colors.csv file, making the JSON output more compact and efficient.
+    This function creates a 2D matrix representation of blocks and
+    only includes blocks that are actually used in the image.
 
     Args:
         block_data: 2D array of block IDs
 
     Returns:
-        Dictionary with compressed block data using block indices
+        Dictionary with block data as a 2D matrix and used block definitions
     """
     if len(block_data) == 0:
-        return {"format": "indexed-rle", "data": []}
+        return {"format": "matrix", "data": [], "block_definitions": []}
 
-    # Get the blocks from the loaded color data
-    from pixeletica.block_utils.block_loader import get_block_colors
+    # Create a set of unique block IDs used in the image
+    unique_blocks = set()
+    for row in block_data:
+        for block_id in row:
+            unique_blocks.add(block_id)
 
-    block_colors = get_block_colors()
+    # Create an ordered list of unique block IDs
+    used_block_definitions = sorted(list(unique_blocks))
 
-    # Create a mapping from block ID to index
-    block_index_map = {block["id"]: idx for idx, block in enumerate(block_colors)}
+    # Create a mapping from block ID to index in our definitions array
+    block_index_map = {
+        block_id: idx for idx, block_id in enumerate(used_block_definitions)
+    }
 
-    # Flatten the 2D array
-    flat_data = np.array(block_data).flatten()
-
-    # Initialize variables for RLE
-    rle_data = []
-    current_id = flat_data[0]
-    count = 1
-
-    # Perform run-length encoding with indices
-    for i in range(1, len(flat_data)):
-        if flat_data[i] == current_id:
-            count += 1
-        else:
-            # Store index instead of full block ID
-            block_index = block_index_map.get(current_id, -1)  # -1 for unknown blocks
-            rle_data.append([block_index, count])
-            current_id = flat_data[i]
-            count = 1
-
-    # Add the last run
-    block_index = block_index_map.get(current_id, -1)
-    rle_data.append([block_index, count])
+    # Create a 2D matrix of block indices
+    matrix_data = []
+    for row in block_data:
+        matrix_row = [block_index_map.get(block_id, -1) for block_id in row]
+        matrix_data.append(matrix_row)
 
     return {
-        "format": "indexed-rle",
-        "data": rle_data,
-        "block_definitions": [
-            block["id"] for block in block_colors
-        ],  # Add block definitions for reference
+        "format": "matrix",
+        "data": matrix_data,
+        "block_definitions": used_block_definitions,
     }
 
 
-def decompress_block_data(compressed_data, width, height):
+def decompress_block_data(compressed_data, width=None, height=None):
     """
-    Decompress run-length encoded block data back to a 2D array.
+    Convert block data from metadata back to a 2D array of actual block IDs.
 
     Args:
-        compressed_data: Dictionary with compressed block data
-        width: Width of the image
-        height: Height of the image
+        compressed_data: Dictionary with block data
+        width: Width of the image (optional, only needed for RLE formats)
+        height: Height of the image (optional, only needed for RLE formats)
 
     Returns:
         2D array of block IDs
     """
     if compressed_data["format"] == "rle":
-        # Handle original RLE format
+        # Handle original RLE format (legacy support)
+        if width is None or height is None:
+            raise ValueError("Width and height are required for RLE format")
         flat_data = []
         for item in compressed_data["data"]:
             block_id, count = item
             flat_data.extend([block_id] * count)
+        return np.array(flat_data).reshape(height, width)
 
     elif compressed_data["format"] == "indexed-rle":
-        # Handle new indexed RLE format
+        # Handle indexed RLE format (legacy support)
+        if width is None or height is None:
+            raise ValueError("Width and height are required for indexed-RLE format")
         block_definitions = compressed_data.get("block_definitions", [])
         flat_data = []
 
@@ -170,11 +162,24 @@ def decompress_block_data(compressed_data, width, height):
             else:
                 block_id = f"unknown_block_{block_index}"
             flat_data.extend([block_id] * count)
-    else:
-        raise ValueError(f"Unsupported compression format: {compressed_data['format']}")
+        return np.array(flat_data).reshape(height, width)
 
-    # Reshape to 2D array
-    return np.array(flat_data).reshape(height, width)
+    elif compressed_data["format"] == "matrix":
+        # Handle matrix format (new format)
+        block_definitions = compressed_data["block_definitions"]
+        block_data = []
+        for row in compressed_data["data"]:
+            block_row = []
+            for block_index in row:
+                if 0 <= block_index < len(block_definitions):
+                    block_id = block_definitions[block_index]
+                else:
+                    block_id = f"unknown_block_{block_index}"
+                block_row.append(block_id)
+            block_data.append(block_row)
+        return np.array(block_data)
+    else:
+        raise ValueError(f"Unsupported format: {compressed_data['format']}")
 
 
 def save_metadata_json(metadata, output_path):
