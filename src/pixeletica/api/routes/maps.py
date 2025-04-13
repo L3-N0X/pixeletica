@@ -39,7 +39,37 @@ logger = logging.getLogger("pixeletica.api.routes.maps")
 router = APIRouter(tags=["maps"])
 
 
-@router.get("/api/maps.json", response_model=MapListResponse)
+@router.get(
+    "/api/maps.json",
+    response_model=MapListResponse,
+    responses={
+        200: {
+            "description": "List of available maps",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "maps": [
+                            {
+                                "id": "d290f1ee-6c54-4b01-90e6-d701748f0851",
+                                "name": "Castle Blueprint",
+                                "created": "2024-04-13T21:30:00.000Z",
+                                "thumbnail": "/api/map/d290f1ee-6c54-4b01-90e6-d701748f0851/thumbnail.png",
+                                "description": "Medieval castle design converted to blocks",
+                            },
+                            {
+                                "id": "7289d334-9a01-45cf-b5cc-8d887c4e9cc2",
+                                "name": "Pixel Art Logo",
+                                "created": "2024-04-13T20:15:00.000Z",
+                                "thumbnail": "/api/map/7289d334-9a01-45cf-b5cc-8d887c4e9cc2/thumbnail.png",
+                                "description": "Company logo converted to minecraft blocks",
+                            },
+                        ]
+                    }
+                }
+            },
+        }
+    },
+)
 async def list_maps() -> MapListResponse:
     """
     List all available maps (completed conversion tasks).
@@ -81,7 +111,42 @@ async def list_maps() -> MapListResponse:
     return MapListResponse(maps=maps)
 
 
-@router.get("/api/map/{map_id}/metadata.json")
+@router.get(
+    "/api/map/{map_id}/metadata.json",
+    responses={
+        200: {
+            "description": "Map metadata",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": "d290f1ee-6c54-4b01-90e6-d701748f0851",
+                        "name": "Castle Blueprint",
+                        "width": 1920,
+                        "height": 1080,
+                        "origin_x": 0,
+                        "origin_z": 0,
+                        "created": "2024-04-13T21:30:00.000Z",
+                        "tileSize": 256,
+                        "maxZoom": 4,
+                        "minZoom": 0,
+                        "tileFormat": "png",
+                        "description": "Medieval castle design converted to blocks",
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Map not found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Map not found: d290f1ee-6c54-4b01-90e6-d701748f0851"
+                    }
+                }
+            },
+        },
+    },
+)
 async def get_map_metadata(map_id: str):
     """
     Get detailed metadata for a specific map.
@@ -139,7 +204,22 @@ async def get_map_full_image(map_id: str):
     return FileResponse(path=full_image_path, media_type="image/png")
 
 
-@router.get("/api/map/{map_id}/thumbnail.png")
+@router.get(
+    "/api/map/{map_id}/thumbnail.png",
+    responses={
+        200: {"description": "Thumbnail image", "content": {"image/png": {}}},
+        404: {
+            "description": "Map not found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Image not found for map: d290f1ee-6c54-4b01-90e6-d701748f0851"
+                    }
+                }
+            },
+        },
+    },
+)
 async def get_map_thumbnail(map_id: str):
     """
     Get a thumbnail for a map.
@@ -175,7 +255,20 @@ async def get_map_thumbnail(map_id: str):
     return FileResponse(path=thumbnail_path, media_type="image/png")
 
 
-@router.get("/api/map/{map_id}/tiles/{zoom}/{x}/{y}.png")
+@router.get(
+    "/api/map/{map_id}/tiles/{zoom}/{x}/{y}.png",
+    responses={
+        200: {"description": "Map tile image", "content": {"image/png": {}}},
+        404: {
+            "description": "Tile not found",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Tile not found: zoom=2, x=3, y=4"}
+                }
+            },
+        },
+    },
+)
 async def get_map_tile(
     map_id: str,
     zoom: int,

@@ -18,6 +18,7 @@ from src.pixeletica.api.config import MAX_FILE_SIZE  # Import from config
 import logging
 import os
 import time
+import json
 
 # Constants
 RATE_LIMIT = "100/minute"  # 100 requests per minute
@@ -124,17 +125,22 @@ async def validate_request(request: Request, call_next):
     Middleware to validate incoming requests.
     """
     try:
-        # Add your validation logic here
-        # For example, check headers, query parameters, or request body
-        if request.method == "POST":
+        # Only validate JSON content - skip multipart/form-data
+        content_type = request.headers.get("content-type", "")
+        if request.method == "POST" and content_type.startswith("application/json"):
             body = await request.json()
-            # Example: Check if the image URL is present
-            if "image_url" not in body:
+            # Example: Check if the image URL is present in JSON payloads
+            if "image_url" in body and not body["image_url"]:
                 raise HTTPException(status_code=400, detail="Image URL is required")
     except HTTPException as e:
         return JSONResponse(
             status_code=e.status_code,
             content={"detail": e.detail},
+        )
+    except json.JSONDecodeError:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Invalid JSON"},
         )
     response = await call_next(request)
     return response

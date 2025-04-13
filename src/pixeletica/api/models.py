@@ -32,6 +32,15 @@ class TaskStatus(str, Enum):
     FAILED = "failed"
 
 
+class LineVisibilityOption(str, Enum):
+    """Available options for line visibility in exported images."""
+
+    NO_LINES = "no_lines"
+    BLOCK_GRID_ONLY = "block_grid_only"
+    CHUNK_LINES_ONLY = "chunk_lines_only"
+    BOTH = "both"
+
+
 class ExportSettings(BaseModel):
     """Settings for exporting the converted image."""
 
@@ -51,9 +60,7 @@ class ExportSettings(BaseModel):
     chunkLineColor: str = Field(default="#FF0000", description="Color for chunk lines")
     drawBlockLines: bool = Field(default=True, description="Draw block boundary lines")
     blockLineColor: str = Field(default="#000000", description="Color for block lines")
-    splitCount: int = Field(
-        default=1, description="Number of segments to split the image into"
-    )
+    # Removed splitCount, replaced by image_division in ConversionStartRequest
     versionOptions: Dict = Field(
         default={}, description="Additional version-specific options"
     )
@@ -90,6 +97,69 @@ class ConversionRequest(BaseModel):
     )
     schematicSettings: SchematicSettings = Field(
         default_factory=SchematicSettings, description="Schematic generation settings"
+    )
+
+
+# New model for the /conversion/start request body
+class ConversionStartRequest(BaseModel):
+    """Request model for starting a conversion task, combining form data."""
+
+    # Dimension Settings
+    width: int = Field(..., gt=0, description="Target width in pixels")
+    height: int = Field(..., gt=0, description="Target height in pixels")
+
+    # Dithering
+    dithering_algorithm: DitherAlgorithm = Field(
+        default=DitherAlgorithm.FLOYD_STEINBERG,
+        description="Dithering algorithm to apply",
+    )
+
+    # Color Palette (defaulted as requested)
+    color_palette: str = Field(
+        default="minecraft", description="Color palette to use for block mapping"
+    )
+
+    # Minecraft Origin Coordinates
+    origin_x: int = Field(default=0, description="X-coordinate origin in Minecraft")
+    origin_y: int = Field(default=100, description="Y-coordinate (height) origin")
+    origin_z: int = Field(default=0, description="Z-coordinate origin in Minecraft")
+
+    # Line Settings
+    chunk_line_color: str = Field(
+        default="#FF0000FF", description="Hex color for chunk lines (RGBA)"
+    )
+    block_line_color: str = Field(
+        default="#000000FF", description="Hex color for block grid lines (RGBA)"
+    )
+
+    # Export Settings
+    line_visibilities: List[LineVisibilityOption] = Field(
+        default=[LineVisibilityOption.CHUNK_LINES_ONLY],
+        description="List of line visibility options to generate. Can select multiple to generate different versions.",
+    )
+    image_division: int = Field(
+        default=1,
+        gt=0,
+        description="Number of parts to divide the image into (e.g., 1 for single, 2 for two parts, etc.)",
+    )
+
+    # Schematic Settings
+    generate_schematic: bool = Field(
+        default=False, description="Whether to generate a litematica schematic"
+    )
+    schematic_name: Optional[str] = Field(
+        default=None, description="Name of the schematic file"
+    )
+    schematic_author: str = Field(
+        default="Pixeletica API", description="Author of the schematic"
+    )
+    schematic_description: Optional[str] = Field(
+        default=None, description="Description of the schematic"
+    )
+
+    # Always generate web style files
+    generate_web_files: bool = Field(
+        default=True, description="Always generate web viewer files"
     )
 
 

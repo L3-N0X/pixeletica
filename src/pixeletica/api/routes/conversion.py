@@ -12,14 +12,14 @@ import base64
 import mimetypes
 import asyncio
 import io
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from fastapi import (
     APIRouter,
     BackgroundTasks,
     Depends,
     File,
-    Form,
+    # Form, # No longer needed for start_conversion
     HTTPException,
     UploadFile,
     status,
@@ -37,6 +37,8 @@ from src.pixeletica.api.models import (
     SelectiveDownloadRequest,
     TaskResponse,
     DitherAlgorithm,
+    LineVisibilityOption,
+    ConversionStartRequest,  # Import the new model
 )
 from src.pixeletica.api.services import storage, task_queue
 from src.pixeletica.dithering import get_algorithm_by_name
@@ -237,21 +239,37 @@ async def get_preview_conversion(
     response_model=TaskResponse,
     status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(RateLimiter(times=5, minutes=1))],
+    responses={
+        202: {
+            "description": "Task created successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "taskId": "d290f1ee-6c54-4b01-90e6-d701748f0851",
+                        "status": "queued",
+                        "progress": 0,
+                        "timestamp": "2024-04-13T21:30:00.000Z",
+                        "error": None,
+                    }
+                }
+            },
+        },
+        413: {
+            "description": "File too large",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Image size exceeds maximum limit of 10MB"}
+                }
+            },
+        },
+    },
 )
 async def start_conversion(
-    image_file: UploadFile = File(...),
-    dithering_algorithm: str = Form("floyd-steinberg"),
-    color_palette: str = Form("minecraft"),
-    output_format: str = Form("png"),
-    x_orientation: str = Form("x"),
-    z_orientation: str = Form("z"),
-    y_is_height: bool = Form(True),
-    scale: int = Form(1),
-    split_x: int = Form(1),
-    split_z: int = Form(1),
+    image_file: UploadFile = File(..., description="Image file to convert"),
+    request_data: ConversionStartRequest = Depends(),  # Use Depends for form data model
 ) -> TaskResponse:
     """
-    Start a new image conversion task.
+    Start a new image conversion task using form data mapped to a Pydantic model.
 
     This endpoint accepts an image and configuration parameters,
     creates a new task, and returns a task ID for status tracking.
@@ -281,24 +299,48 @@ async def start_conversion(
             detail=f"Invalid image data: {str(e)}",
         )
 
-    # Prepare request data
-    request_data = {
-        "dithering_algorithm": dithering_algorithm,
-        "color_palette": color_palette,
-        "output_format": output_format,
-        "x_orientation": x_orientation,
-        "z_orientation": z_orientation,
-        "y_is_height": y_is_height,
-        "scale": scale,
-        "split_x": split_x,
-        "split_z": split_z,
-        "image": image_data_b64,
-        "filename": image_file.filename,
+    # Prepare task data dictionary from the Pydantic model and image data
+    task_data: Dict[str, Any] = request_data.model_dump()  # Convert model to dict
+    task_data["image"] = image_data_b64
+    task_data["filename"] = image_file.filename
+    # Ensure enum values are strings if needed by the task queue
+    task_data["dithering_algorithm"] = request_data.dithering_algorithm.value
+
+    # Convert line visibility options to string values
+    task_data["line_visibilities"] = [
+        vis.value for vis in request_data.line_visibilities
+    ]
+
+    # Define export types constants
+    EXPORT_TYPE_WEB = "web"
+    EXPORT_TYPE_LARGE = "large"
+    EXPORT_TYPE_SPLIT = "split"
+
+    # Set export types with web files always included
+    task_data["export_types"] = [EXPORT_TYPE_WEB]
+    # We always want large exports for different line visibilities
+    task_data["export_types"].append(EXPORT_TYPE_LARGE)
+    # Add split export if requested
+    if task_data.get("image_division", 1) > 1:
+        task_data["export_types"].append(EXPORT_TYPE_SPLIT)
+
+    # Set version options for each line visibility configuration
+    task_data["version_options"] = {
+        "no_lines": LineVisibilityOption.NO_LINES in request_data.line_visibilities,
+        "only_block_lines": LineVisibilityOption.BLOCK_GRID_ONLY
+        in request_data.line_visibilities,
+        "only_chunk_lines": LineVisibilityOption.CHUNK_LINES_ONLY
+        in request_data.line_visibilities,
+        "both_lines": LineVisibilityOption.BOTH in request_data.line_visibilities,
     }
+
+    # Remove fields not directly needed by the worker task if any,
+    # or map them as required by the task processing logic.
+    # For now, we pass the whole model dump plus image/filename.
 
     # Create the task
     try:
-        task_id = task_queue.create_task(request_data)
+        task_id = task_queue.create_task(task_data)  # Pass the prepared dict
         task_status = task_queue.get_task_status(task_id)
     except Exception as e:
         raise HTTPException(
@@ -321,7 +363,58 @@ async def start_conversion(
     )
 
 
-@router.get("/{task_id}", response_model=TaskResponse)
+@router.get(
+    "/{task_id}",
+    response_model=TaskResponse,
+    responses={
+        200: {
+            "description": "Task status retrieved successfully",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "processing": {
+                            "value": {
+                                "taskId": "d290f1ee-6c54-4b01-90e6-d701748f0851",
+                                "status": "processing",
+                                "progress": 45,
+                                "timestamp": "2024-04-13T21:30:00.000Z",
+                                "error": None,
+                            }
+                        },
+                        "completed": {
+                            "value": {
+                                "taskId": "d290f1ee-6c54-4b01-90e6-d701748f0851",
+                                "status": "completed",
+                                "progress": 100,
+                                "timestamp": "2024-04-13T21:31:00.000Z",
+                                "error": None,
+                            }
+                        },
+                        "failed": {
+                            "value": {
+                                "taskId": "d290f1ee-6c54-4b01-90e6-d701748f0851",
+                                "status": "failed",
+                                "progress": None,
+                                "timestamp": "2024-04-13T21:30:30.000Z",
+                                "error": "Failed to process image: Invalid format",
+                            }
+                        },
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Task not found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Task not found: d290f1ee-6c54-4b01-90e6-d701748f0851"
+                    }
+                }
+            },
+        },
+    },
+)
 async def get_conversion_status(task_id: str) -> TaskResponse:
     """
     Check the status of a conversion task.
@@ -344,7 +437,55 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
     )
 
 
-@router.get("/{task_id}/files", response_model=FileListResponse)
+@router.get(
+    "/{task_id}/files",
+    response_model=FileListResponse,
+    responses={
+        200: {
+            "description": "List of files for the task",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "taskId": "d290f1ee-6c54-4b01-90e6-d701748f0851",
+                        "files": [
+                            {
+                                "fileId": "dithered_image",
+                                "filename": "dithered.png",
+                                "type": "image/png",
+                                "size": 1024567,
+                                "category": "dithered",
+                            },
+                            {
+                                "fileId": "rendered_image",
+                                "filename": "rendered.png",
+                                "type": "image/png",
+                                "size": 2048123,
+                                "category": "rendered",
+                            },
+                            {
+                                "fileId": "schematic",
+                                "filename": "build.litematic",
+                                "type": "application/octet-stream",
+                                "size": 512789,
+                                "category": "schematic",
+                            },
+                        ],
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Task not found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Task not found: d290f1ee-6c54-4b01-90e6-d701748f0851"
+                    }
+                }
+            },
+        },
+    },
+)
 async def list_files(task_id: str, category: Optional[str] = None) -> FileListResponse:
     """
     List files generated for a task.
@@ -466,7 +607,32 @@ async def download_selected_files(task_id: str, request: SelectiveDownloadReques
     )
 
 
-@router.delete("/{task_id}")
+@router.delete(
+    "/{task_id}",
+    responses={
+        200: {
+            "description": "Task deletion initiated successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "Task d290f1ee-6c54-4b01-90e6-d701748f0851 deletion initiated",
+                        "success": True,
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "Task not found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Task not found: d290f1ee-6c54-4b01-90e6-d701748f0851"
+                    }
+                }
+            },
+        },
+    },
+)
 async def delete_task(task_id: str, background_tasks: BackgroundTasks):
     """
     Delete a conversion task and all associated files.
