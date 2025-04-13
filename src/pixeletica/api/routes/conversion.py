@@ -12,14 +12,14 @@ import base64
 import mimetypes
 import asyncio
 import io
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from fastapi import (
     APIRouter,
     BackgroundTasks,
     Depends,
     File,
-    # Form, # No longer needed for start_conversion
+    Form,
     HTTPException,
     UploadFile,
     status,
@@ -38,8 +38,8 @@ from src.pixeletica.api.models import (
     TaskResponse,
     DitherAlgorithm,
     LineVisibilityOption,
-    ConversionStartRequest,  # Import the new model
 )
+from src.pixeletica.api.routes.form_parsers import parse_line_visibilities
 from src.pixeletica.api.services import storage, task_queue
 from src.pixeletica.dithering import get_algorithm_by_name
 from src.pixeletica.image_ops import resize_image
@@ -266,7 +266,43 @@ async def get_preview_conversion(
 )
 async def start_conversion(
     image_file: UploadFile = File(..., description="Image file to convert"),
-    request_data: ConversionStartRequest = Depends(),  # Use Depends for form data model
+    width: int = Form(..., description="Target width in pixels"),
+    height: int = Form(..., description="Target height in pixels"),
+    dithering_algorithm: DitherAlgorithm = Form(
+        default=DitherAlgorithm.FLOYD_STEINBERG,
+        description="Dithering algorithm to apply",
+    ),
+    color_palette: str = Form(
+        default="minecraft", description="Color palette to use for block mapping"
+    ),
+    origin_x: int = Form(default=0, description="X-coordinate origin in Minecraft"),
+    origin_y: int = Form(default=100, description="Y-coordinate (height) origin"),
+    origin_z: int = Form(default=0, description="Z-coordinate origin in Minecraft"),
+    chunk_line_color: str = Form(
+        default="#FF0000FF", description="Hex color for chunk lines (RGBA)"
+    ),
+    block_line_color: str = Form(
+        default="#000000FF", description="Hex color for block grid lines (RGBA)"
+    ),
+    line_visibilities: List[LineVisibilityOption] = Depends(parse_line_visibilities),
+    image_division: int = Form(
+        default=1, description="Number of parts to divide the image into"
+    ),
+    generate_schematic: bool = Form(
+        default=False, description="Whether to generate a litematica schematic"
+    ),
+    schematic_name: Optional[str] = Form(
+        default=None, description="Name of the schematic file"
+    ),
+    schematic_author: str = Form(
+        default="Pixeletica API", description="Author of the schematic"
+    ),
+    schematic_description: Optional[str] = Form(
+        default=None, description="Description of the schematic"
+    ),
+    generate_web_files: bool = Form(
+        default=True, description="Generate web viewer files"
+    ),
 ) -> TaskResponse:
     """
     Start a new image conversion task using form data mapped to a Pydantic model.
@@ -299,17 +335,29 @@ async def start_conversion(
             detail=f"Invalid image data: {str(e)}",
         )
 
-    # Prepare task data dictionary from the Pydantic model and image data
-    task_data: Dict[str, Any] = request_data.model_dump()  # Convert model to dict
-    task_data["image"] = image_data_b64
-    task_data["filename"] = image_file.filename
-    # Ensure enum values are strings if needed by the task queue
-    task_data["dithering_algorithm"] = request_data.dithering_algorithm.value
+    # Prepare task data dictionary from the form data
+    task_data: Dict[str, Any] = {
+        "width": width,
+        "height": height,
+        "dithering_algorithm": dithering_algorithm.value,
+        "color_palette": color_palette,
+        "origin_x": origin_x,
+        "origin_y": origin_y,
+        "origin_z": origin_z,
+        "chunk_line_color": chunk_line_color,
+        "block_line_color": block_line_color,
+        "image_division": image_division,
+        "generate_schematic": generate_schematic,
+        "schematic_name": schematic_name,
+        "schematic_author": schematic_author,
+        "schematic_description": schematic_description,
+        "generate_web_files": generate_web_files,
+        "image": image_data_b64,
+        "filename": image_file.filename,
+    }
 
     # Convert line visibility options to string values
-    task_data["line_visibilities"] = [
-        vis.value for vis in request_data.line_visibilities
-    ]
+    task_data["line_visibilities"] = [vis.value for vis in line_visibilities]
 
     # Define export types constants
     EXPORT_TYPE_WEB = "web"
@@ -326,12 +374,10 @@ async def start_conversion(
 
     # Set version options for each line visibility configuration
     task_data["version_options"] = {
-        "no_lines": LineVisibilityOption.NO_LINES in request_data.line_visibilities,
-        "only_block_lines": LineVisibilityOption.BLOCK_GRID_ONLY
-        in request_data.line_visibilities,
-        "only_chunk_lines": LineVisibilityOption.CHUNK_LINES_ONLY
-        in request_data.line_visibilities,
-        "both_lines": LineVisibilityOption.BOTH in request_data.line_visibilities,
+        "no_lines": LineVisibilityOption.NO_LINES in line_visibilities,
+        "only_block_lines": LineVisibilityOption.BLOCK_GRID_ONLY in line_visibilities,
+        "only_chunk_lines": LineVisibilityOption.CHUNK_LINES_ONLY in line_visibilities,
+        "both_lines": LineVisibilityOption.BOTH in line_visibilities,
     }
 
     # Remove fields not directly needed by the worker task if any,
