@@ -21,17 +21,23 @@ from src.pixeletica.image_ops import load_image, resize_image
 from src.pixeletica.rendering.block_renderer import render_blocks_from_block_ids
 from src.pixeletica.schematic_generator import generate_schematic
 
+# Set up logging immediately to capture all initialization
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("pixeletica.api.task_queue")
+
 # Configure Celery
 redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+logger.info(f"Initializing Celery with broker URL: {redis_url}")
 celery_app = Celery("pixeletica", broker=redis_url, backend=redis_url)
 
-# Configure Celery task routes
+# Configure Celery task routes - ensure tasks are sent to the 'celery' queue
+# which is where the worker is listening by default
 celery_app.conf.task_routes = {
-    "pixeletica.api.services.task_queue.*": {"queue": "pixeletica"}
+    "pixeletica.api.services.task_queue.*": {"queue": "celery"}
 }
 
-# Set up logging
-logger = logging.getLogger("pixeletica.api.task_queue")
+# Import all modules that define tasks so they're properly registered
+logger.info("Registering Celery tasks...")
 
 
 def create_task(request_data: Dict) -> str:
@@ -44,8 +50,20 @@ def create_task(request_data: Dict) -> str:
     Returns:
         Task ID as a string
     """
+    # Verify Redis connection at task creation time
+    try:
+        from redis import Redis
+
+        r = Redis.from_url(redis_url)
+        r.ping()
+        logger.info(f"Redis connection verified for task creation")
+    except Exception as e:
+        logger.error(f"Redis connection failed during task creation: {e}")
+        # Continue anyway as we'll use the file-based task queue
+
     # Generate a unique task ID
     task_id = str(uuid.uuid4())
+    logger.info(f"Creating new task with ID: {task_id}")
 
     # Initialize task metadata
     task_metadata = {
@@ -156,6 +174,7 @@ def update_task_status(
     retry_kwargs={"max_retries": 3, "countdown": 60},
     soft_time_limit=3000,
     time_limit=3600,
+    queue="celery",  # Explicitly specify the queue
 )
 def process_image_task(self, task_id: str) -> Dict[str, Any]:
     """
@@ -168,7 +187,8 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
         Dictionary with task results
     """
     start_time = datetime.now()
-    logger.info(f"Starting task {task_id} at {start_time}")
+    logger.info(f"⭐ WORKER RECEIVED TASK: {task_id} at {start_time}")
+    logger.info(f"Task request details: {self.request!r}")
 
     try:
         # Verify Redis connection before starting
@@ -190,8 +210,21 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
         if not metadata:
             raise ValueError(f"Task metadata not found for task {task_id}")
 
-        config = metadata.get("config", {})
+        # Log metadata keys to debug
+        logger.info(f"Task {task_id} metadata keys: {list(metadata.keys())}")
+
+        # Try to load exportSettings from various possible locations in the metadata
+        export_settings = metadata.get("exportSettings", {})
+        if not export_settings and "config" in metadata:
+            export_settings = metadata.get("config", {}).get("exportSettings", {})
+            logger.info(f"Found exportSettings in config: {bool(export_settings)}")
+
+        # Try to find the input image path
         input_image_path = metadata.get("inputImagePath")
+        if not input_image_path and "config" in metadata:
+            config = metadata.get("config", {})
+        else:
+            config = metadata
 
         if not input_image_path:
             raise ValueError("Input image path not found in task metadata")

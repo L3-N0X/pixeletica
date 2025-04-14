@@ -519,11 +519,20 @@ async def start_conversion(
     # or map them as required by the task processing logic.
     # For now, we pass the whole model dump plus image/filename.
 
+    # Log the task data for debugging purposes
+    logger.info(f"Creating task with the following parameters:")
+    for key, value in task_data.items():
+        if key != "image":  # Skip logging the image data as it's too large
+            logger.info(f"  {key}: {value}")
+
     # Create the task
     try:
         task_id = task_queue.create_task(task_data)  # Pass the prepared dict
+        logger.info(f"Task created with ID: {task_id}")
         task_status = task_queue.get_task_status(task_id)
+        logger.info(f"Initial task status: {task_status}")
     except Exception as e:
+        logger.error(f"Error creating conversion task: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating conversion task: {str(e)}",
