@@ -82,7 +82,11 @@ def create_task(request_data: Dict) -> str:
 
     # Start processing task if image was saved successfully
     if task_metadata["status"] != TaskStatus.FAILED:
-        process_image_task.delay(task_id)
+        # Use the registered task name to ensure proper routing in Celery
+        celery_app.send_task(
+            "pixeletica.api.services.task_queue.process_image_task", args=[task_id]
+        )
+        logger.info(f"Task {task_id} queued for processing")
 
     return task_id
 
