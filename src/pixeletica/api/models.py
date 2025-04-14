@@ -133,9 +133,9 @@ class ConversionStartRequest(BaseModel):
     )
 
     # Export Settings
-    line_visibilities: LineVisibilityOption = Field(
-        default=LineVisibilityOption.CHUNK_LINES_ONLY,
-        description="Line visibility option to use. Only one can be active at a time.",
+    line_visibilities: List[LineVisibilityOption] = Field(
+        default_factory=lambda: [LineVisibilityOption.CHUNK_LINES_ONLY],
+        description="Line visibility options to use. Multiple can be selected.",
     )
     image_division: int = Field(
         default=1,
@@ -196,9 +196,9 @@ class ConversionJSONMetadata(BaseModel):
     )
 
     # Export Settings
-    line_visibilities: LineVisibilityOption = Field(
-        default=LineVisibilityOption.CHUNK_LINES_ONLY,
-        description="Line visibility option to use. Only one can be active at a time.",
+    line_visibilities: List[LineVisibilityOption] = Field(
+        default_factory=lambda: [LineVisibilityOption.CHUNK_LINES_ONLY],
+        description="Line visibility options to use. Multiple can be selected.",
     )
     image_division: int = Field(
         default=1,
@@ -237,7 +237,7 @@ class ConversionJSONMetadata(BaseModel):
                 "origin_z": 0,
                 "chunk_line_color": "#FF0000FF",
                 "block_line_color": "#000000FF",
-                "line_visibilities": "chunk_lines_only",
+                "line_visibilities": ["chunk_lines_only"],
                 "image_division": 2,
                 "generate_schematic": True,
                 "schematic_name": "my_schematic",
