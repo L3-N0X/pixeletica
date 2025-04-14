@@ -26,7 +26,8 @@ from PIL import Image
 logger = logging.getLogger("pixeletica.api.storage")
 
 # Base directory for all task files
-TASKS_DIR = Path("/app/out/api_tasks")
+# Use /app/tasks which is mounted as a volume in both API and worker containers
+TASKS_DIR = Path("/app/tasks")
 
 
 def ensure_task_directory(task_id: str) -> Path:

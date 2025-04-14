@@ -101,10 +101,26 @@ def create_task(request_data: Dict) -> str:
     # Start processing task if image was saved successfully
     if task_metadata["status"] != TaskStatus.FAILED:
         # Use the registered task name to ensure proper routing in Celery
-        celery_app.send_task(
+        result = celery_app.send_task(
             "pixeletica.api.services.task_queue.process_image_task", args=[task_id]
         )
-        logger.info(f"Task {task_id} queued for processing")
+        logger.info(f"Task {task_id} queued for processing with task_id: {result.id}")
+        logger.info(f"Task state: {result.state}")
+
+        # Verify the task was registered with Redis
+        try:
+            from redis import Redis
+
+            r = Redis.from_url(redis_url)
+            task_key = f"celery-task-meta-{result.id}"
+            if r.exists(task_key):
+                logger.info(f"Task {result.id} found in Redis")
+            else:
+                logger.warning(
+                    f"Task {result.id} NOT found in Redis - this may indicate a connection issue"
+                )
+        except Exception as e:
+            logger.error(f"Failed to check Redis for task {result.id}: {e}")
 
     return task_id
 
@@ -301,7 +317,10 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                 split_count = export_settings.get("splitCount", 1)
                 version_options = export_settings.get("versionOptions", {})
 
-                # Export processed image with export settings
+                # Export processed image with export settings - ensure it's using the shared task directory
+                web_output_dir = str(storage.TASKS_DIR / task_id / "web")
+                logger.info(f"Exporting files to web directory: {web_output_dir}")
+
                 export_results = export_processed_image(
                     block_image,
                     base_name,
@@ -315,8 +334,10 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                     split_count=split_count,
                     version_options=version_options,
                     algorithm_name=algorithm_id,
-                    output_dir=str(storage.TASKS_DIR / task_id / "web"),
+                    output_dir=web_output_dir,
                 )
+
+                logger.info(f"Export results: {export_results}")
 
                 # Update metadata with export results
                 metadata["exports"] = export_results
@@ -404,21 +425,30 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
 
         # Ensure task is marked as completed
         logger.info(f"Task {task_id} finished processing, updating to COMPLETED status")
-        update_task_status(task_id, TaskStatus.COMPLETED, progress=100)
+        completion_time = datetime.now().isoformat()
+        logger.info(f"Setting completion timestamp to: {completion_time}")
 
-        # Verify task status was actually updated
-        final_status = get_task_status(task_id)
-        if final_status and final_status.get("status") != TaskStatus.COMPLETED.value:
-            logger.error(
-                f"Failed to update task {task_id} to COMPLETED status, forcing update"
-            )
-            # Force another update attempt
-            metadata = storage.load_task_metadata(task_id, bypass_cache=True)
-            if metadata:
-                metadata["status"] = TaskStatus.COMPLETED.value
-                metadata["progress"] = 100
-                metadata["updated"] = datetime.now().isoformat()
-                storage.save_task_metadata(task_id, metadata, force=True)
+        # Force bypass cache and update status directly
+        metadata = storage.load_task_metadata(task_id, bypass_cache=True)
+        if metadata:
+            metadata["status"] = TaskStatus.COMPLETED.value
+            metadata["progress"] = 100
+            metadata["updated"] = completion_time
+            metadata["completedAt"] = completion_time
+            storage.save_task_metadata(task_id, metadata, force=True)
+            logger.info(f"✅ Task metadata updated with COMPLETED status: {metadata}")
+        else:
+            # Create new metadata if it doesn't exist
+            new_metadata = {
+                "taskId": task_id,
+                "status": TaskStatus.COMPLETED.value,
+                "progress": 100,
+                "created": datetime.now().isoformat(),
+                "updated": completion_time,
+                "completedAt": completion_time,
+            }
+            storage.save_task_metadata(task_id, new_metadata, force=True)
+            logger.info(f"✅ Created new COMPLETED metadata: {new_metadata}")
 
         end_time = datetime.now()
         processing_time = (end_time - start_time).total_seconds()

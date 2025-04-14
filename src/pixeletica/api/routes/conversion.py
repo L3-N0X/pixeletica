@@ -107,7 +107,7 @@ async def apply_dithering_with_timeout(
         csv_path = "./src/minecraft/block-colors-2024.csv"
     else:
         # Default to the standard minecraft palette
-        csv_path = "./src/minecraft/block-colors.csv"
+        csv_path = "./src/minecraft/block-colors-2025.csv"
 
     # Load the block colors
     if not load_block_colors(csv_path):
