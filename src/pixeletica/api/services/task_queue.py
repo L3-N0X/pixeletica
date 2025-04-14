@@ -269,6 +269,23 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
         if not dither_func:
             raise ValueError(f"Unknown dithering algorithm: {algorithm_name}")
 
+        # Load block colors before applying dithering
+        from src.pixeletica.block_utils.block_loader import load_block_colors
+
+        # Determine color palette - default to minecraft-2025 if not specified
+        color_palette = config.get("color_palette", "minecraft")
+
+        # Choose the appropriate CSV file based on color palette
+        if color_palette == "minecraft-2024":
+            csv_path = "./src/minecraft/block-colors-2024.csv"
+        else:
+            # Default to the standard minecraft palette
+            csv_path = "./src/minecraft/block-colors-2025.csv"
+
+        logger.info(f"Loading block colors from {csv_path}")
+        if not load_block_colors(csv_path):
+            raise ValueError(f"Failed to load block colors from {csv_path}")
+
         dithered_img, block_ids = dither_func(resized_img)
 
         # Save dithered image

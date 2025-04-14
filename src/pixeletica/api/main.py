@@ -52,14 +52,21 @@ app.include_router(conversion.router)
 app.include_router(maps.router)
 
 
-@app.on_event("startup")
-async def startup():
+# Define app lifespan to manage startup/shutdown events
+@app.lifespan
+async def lifespan(app: FastAPI):
+    # Startup: Initialize rate limiter
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     try:
         redis_instance = redis.from_url(redis_url)
         await FastAPILimiter.init(redis_instance)
+        logger.info("Redis connection established for rate limiting")
     except Exception as e:
         logger.error(f"Failed to connect to Redis: {e}")
+
+    yield  # This separates startup from shutdown logic
+
+    # Shutdown logic (if any) would go here
 
 
 @app.get("/", tags=["health"])
