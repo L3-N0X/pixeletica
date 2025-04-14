@@ -70,17 +70,15 @@ async def validate_file_size(file: UploadFile = File(...)):
 
 
 async def apply_dithering_with_timeout(
-    width: int,
-    height: int,
+    image: Image.Image,
     algorithm: DitherAlgorithm,
     color_palette: str = "minecraft",
 ):
     """
-    Create a blank image and apply dithering with timeout.
+    Apply dithering to the input image with timeout.
 
     Args:
-        width: Image width in pixels
-        height: Image height in pixels
+        image: PIL Image object to process
         algorithm: Dithering algorithm to use
         color_palette: Color palette to use for block mapping (default: "minecraft")
 
@@ -94,14 +92,12 @@ async def apply_dithering_with_timeout(
     start_time = time.time()
 
     # Check if dimensions are reasonable
+    width, height = image.size
     pixel_count = width * height
     if pixel_count > 1000000:  # 1 million pixels (e.g., 1000x1000)
         logger.warning(
             f"Large preview image requested: {width}x{height} = {pixel_count} pixels"
         )
-
-    # Create a blank white image
-    image = Image.new("RGB", (width, height), color="white")
 
     # Load block colors based on the selected palette
     from src.pixeletica.block_utils.block_loader import load_block_colors
@@ -288,7 +284,7 @@ async def get_preview_conversion(
         # Apply dithering with timeout
         try:
             result_img = await apply_dithering_with_timeout(
-                width, height, algorithm, color_palette
+                image, algorithm, color_palette
             )
         except asyncio.TimeoutError:
             raise HTTPException(
