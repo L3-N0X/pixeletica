@@ -70,7 +70,10 @@ async def validate_file_size(file: UploadFile = File(...)):
 
 
 async def apply_dithering_with_timeout(
-    width: int, height: int, algorithm: DitherAlgorithm
+    width: int,
+    height: int,
+    algorithm: DitherAlgorithm,
+    color_palette: str = "minecraft",
 ):
     """
     Create a blank image and apply dithering with timeout.
@@ -79,6 +82,7 @@ async def apply_dithering_with_timeout(
         width: Image width in pixels
         height: Image height in pixels
         algorithm: Dithering algorithm to use
+        color_palette: Color palette to use for block mapping (default: "minecraft")
 
     Returns:
         PIL Image with dithering applied
@@ -98,6 +102,20 @@ async def apply_dithering_with_timeout(
 
     # Create a blank white image
     image = Image.new("RGB", (width, height), color="white")
+
+    # Load block colors based on the selected palette
+    from src.pixeletica.block_utils.block_loader import load_block_colors
+
+    # Determine the CSV path based on color palette
+    if color_palette == "minecraft-2024":
+        csv_path = "./src/minecraft/block-colors-2024.csv"
+    else:
+        # Default to the standard minecraft palette
+        csv_path = "./src/minecraft/block-colors.csv"
+
+    # Load the block colors
+    if not load_block_colors(csv_path):
+        raise ValueError(f"Failed to load block colors from {csv_path}")
 
     # Get the dithering algorithm function
     dither_func, _ = get_algorithm_by_name(algorithm.value)
@@ -195,6 +213,11 @@ async def apply_dithering_with_timeout(
                                 "enum": ["floyd_steinberg", "ordered", "random"],
                                 "description": "Dithering algorithm to apply",
                             },
+                            "color_palette": {
+                                "type": "string",
+                                "enum": ["minecraft", "minecraft-2024"],
+                                "description": "Color palette to use for block mapping",
+                            },
                         },
                         "required": ["width", "height"],
                     }
@@ -209,6 +232,10 @@ async def get_preview_conversion(
     algorithm: DitherAlgorithm = Form(
         DitherAlgorithm.FLOYD_STEINBERG,
         description="Dithering algorithm to apply (floyd_steinberg, ordered, or random)",
+    ),
+    color_palette: str = Form(
+        "minecraft",
+        description="Color palette to use for block mapping (default: minecraft)",
     ),
     image_file: Optional[UploadFile] = File(
         None, description="Image file to preview (optional)"
@@ -260,7 +287,9 @@ async def get_preview_conversion(
 
         # Apply dithering with timeout
         try:
-            result_img = await apply_dithering_with_timeout(width, height, algorithm)
+            result_img = await apply_dithering_with_timeout(
+                width, height, algorithm, color_palette
+            )
         except asyncio.TimeoutError:
             raise HTTPException(
                 status_code=status.HTTP_408_REQUEST_TIMEOUT,

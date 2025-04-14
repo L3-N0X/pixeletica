@@ -146,7 +146,12 @@ def update_task_status(
 
 
 @celery_app.task(
-    name="pixeletica.api.services.task_queue.process_image_task", bind=True
+    name="pixeletica.api.services.task_queue.process_image_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60},
+    soft_time_limit=3000,
+    time_limit=3600,
 )
 def process_image_task(self, task_id: str) -> Dict[str, Any]:
     """
@@ -158,7 +163,21 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
     Returns:
         Dictionary with task results
     """
+    start_time = datetime.now()
+    logger.info(f"Starting task {task_id} at {start_time}")
+
     try:
+        # Verify Redis connection before starting
+        try:
+            from redis import Redis
+
+            r = Redis.from_url(redis_url)
+            r.ping()
+            logger.info(f"Redis connection verified for task {task_id}")
+        except Exception as e:
+            logger.error(f"Redis connection failed for task {task_id}: {e}")
+            # Continue anyway, as we're using local file storage for task state
+
         # Update task status to processing
         update_task_status(task_id, TaskStatus.PROCESSING, progress=5)
 
@@ -346,16 +365,59 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"Error creating ZIP archive for task {task_id}: {e}")
 
-        # Update task status to completed
+        # Ensure task is marked as completed
+        logger.info(f"Task {task_id} finished processing, updating to COMPLETED status")
         update_task_status(task_id, TaskStatus.COMPLETED, progress=100)
+
+        # Verify task status was actually updated
+        final_status = get_task_status(task_id)
+        if final_status and final_status.get("status") != TaskStatus.COMPLETED.value:
+            logger.error(
+                f"Failed to update task {task_id} to COMPLETED status, forcing update"
+            )
+            # Force another update attempt
+            metadata = storage.load_task_metadata(task_id, bypass_cache=True)
+            if metadata:
+                metadata["status"] = TaskStatus.COMPLETED.value
+                metadata["progress"] = 100
+                metadata["updated"] = datetime.now().isoformat()
+                storage.save_task_metadata(task_id, metadata, force=True)
+
+        end_time = datetime.now()
+        processing_time = (end_time - start_time).total_seconds()
+        logger.info(
+            f"Task {task_id} completed successfully in {processing_time} seconds"
+        )
 
         return {
             "taskId": task_id,
             "status": TaskStatus.COMPLETED.value,
-            "message": "Image processing completed successfully",
+            "message": f"Image processing completed successfully in {processing_time} seconds",
         }
+
+    except (KeyboardInterrupt, SystemExit):
+        logger.critical(f"Task {task_id} was interrupted by system, marking as failed")
+        update_task_status(
+            task_id, TaskStatus.FAILED, error="Task was interrupted by system"
+        )
+        raise
 
     except Exception as e:
         logger.error(f"Error processing task {task_id}: {e}", exc_info=True)
         update_task_status(task_id, TaskStatus.FAILED, error=str(e))
+
+        # Verify error status was saved
+        error_status = get_task_status(task_id)
+        if error_status and error_status.get("status") != TaskStatus.FAILED.value:
+            logger.error(
+                f"Failed to update task {task_id} to FAILED status, forcing update"
+            )
+            # Force another update attempt
+            metadata = storage.load_task_metadata(task_id, bypass_cache=True)
+            if metadata:
+                metadata["status"] = TaskStatus.FAILED.value
+                metadata["error"] = str(e)
+                metadata["updated"] = datetime.now().isoformat()
+                storage.save_task_metadata(task_id, metadata, force=True)
+
         return {"taskId": task_id, "status": TaskStatus.FAILED.value, "error": str(e)}

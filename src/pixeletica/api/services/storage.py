@@ -55,13 +55,14 @@ def ensure_task_directory(task_id: str) -> Path:
     return task_dir
 
 
-def save_task_metadata(task_id: str, metadata: Dict) -> Path:
+def save_task_metadata(task_id: str, metadata: Dict, force: bool = False) -> Path:
     """
     Save task metadata to a JSON file.
 
     Args:
         task_id: Task identifier
         metadata: Dictionary containing metadata
+        force: If True, flush the cache immediately after saving
 
     Returns:
         Path to the saved metadata file
@@ -72,34 +73,88 @@ def save_task_metadata(task_id: str, metadata: Dict) -> Path:
     # Update timestamp
     metadata["updated"] = datetime.now().isoformat()
 
-    with open(metadata_file, "w") as f:
-        json.dump(metadata, f, indent=2)
+    retry_count = 3
+    for attempt in range(retry_count):
+        try:
+            # Use atomic write for better reliability
+            temp_file = metadata_file.with_suffix(".json.tmp")
+            with open(temp_file, "w") as f:
+                json.dump(metadata, f, indent=2)
 
-    return metadata_file
+            # Rename for atomic operation
+            temp_file.replace(metadata_file)
+
+            # Log successful save
+            logger.info(f"Successfully saved metadata for task {task_id}")
+
+            # Clear the cache if requested
+            if force:
+                load_task_metadata.cache_clear()
+                logger.info(f"Forced cache clear for task {task_id} metadata")
+
+            return metadata_file
+        except Exception as e:
+            logger.error(
+                f"Error saving task metadata (attempt {attempt+1}/{retry_count}): {e}"
+            )
+            if attempt == retry_count - 1:
+                logger.critical(
+                    f"Failed to save task metadata after {retry_count} attempts"
+                )
+                raise
+            import time
+
+            time.sleep(0.5)  # Short delay before retry
 
 
 @lru_cache(maxsize=128)
-def load_task_metadata(task_id: str) -> Optional[Dict]:
+def load_task_metadata(task_id: str, bypass_cache: bool = False) -> Optional[Dict]:
     """
     Load task metadata from JSON file.
 
     Args:
         task_id: Task identifier
+        bypass_cache: If True, bypass the cache and load from disk
 
     Returns:
         Dictionary containing metadata or None if file doesn't exist
     """
+    # If bypass_cache is True, clear this entry from cache before loading
+    if bypass_cache:
+        # Create a new function that only accepts task_id to match the cache signature
+        def clear_single_entry(key):
+            load_task_metadata.cache_clear()
+            logger.info(f"Cache cleared for task {key} metadata")
+
+        # Clear this specific entry
+        clear_single_entry(task_id)
+
     metadata_file = TASKS_DIR / task_id / "metadata" / "task.json"
 
     if not metadata_file.exists():
         return None
 
-    try:
-        with open(metadata_file, "r") as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Failed to load metadata for task {task_id}: {e}")
-        return None
+    retry_count = 3
+    for attempt in range(retry_count):
+        try:
+            with open(metadata_file, "r") as f:
+                data = json.load(f)
+                return data
+        except json.JSONDecodeError as e:
+            logger.error(
+                f"JSON decode error in metadata for task {task_id} (attempt {attempt+1}/{retry_count}): {e}"
+            )
+            if attempt == retry_count - 1:
+                logger.critical(
+                    f"Failed to decode task metadata JSON after {retry_count} attempts"
+                )
+                return None
+            import time
+
+            time.sleep(0.5)  # Short delay before retry
+        except Exception as e:
+            logger.error(f"Failed to load metadata for task {task_id}: {e}")
+            return None
 
 
 def save_base64_image(task_id: str, image_data: str, filename: str) -> Path:

@@ -69,6 +69,31 @@ services:
           memory: ${WORKER_MEMORY_RESERVATION:-512M}
       replicas: ${WORKER_REPLICAS:-1}
 
+  monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${DOCKER_REGISTRY:-ghcr.io}/${DOCKER_NAMESPACE:-your-username}/pixeletica-monitor:${TAG:-latest}
+    command: python -m src.pixeletica.api.services.task_monitor
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - TASK_MONITOR_INTERVAL=${TASK_MONITOR_INTERVAL:-900}
+      - TASK_MAX_PROCESSING_TIME=${TASK_MAX_PROCESSING_TIME:-3600}
+    volumes:
+      - pixeletica_data:/app/out/api_tasks
+    depends_on:
+      - redis
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '${MONITOR_CPU_LIMIT:-0.1}'
+          memory: ${MONITOR_MEMORY_LIMIT:-128M}
+        reservations:
+          cpus: '${MONITOR_CPU_RESERVATION:-0.05}'
+          memory: ${MONITOR_MEMORY_RESERVATION:-64M}
+
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes --maxmemory ${REDIS_MEMORY_LIMIT:-256mb} --maxmemory-policy ${REDIS_MEMORY_POLICY:-volatile-lru}
