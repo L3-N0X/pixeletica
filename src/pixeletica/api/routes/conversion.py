@@ -13,6 +13,7 @@ import mimetypes
 import asyncio
 import io
 from typing import Optional, Dict, Any, List
+import json
 
 from fastapi import (
     APIRouter,
@@ -24,6 +25,7 @@ from fastapi import (
     UploadFile,
     status,
     Query,
+    Body,
 )
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi_limiter.depends import RateLimiter
@@ -38,8 +40,8 @@ from src.pixeletica.api.models import (
     TaskResponse,
     DitherAlgorithm,
     LineVisibilityOption,
+    ConversionJSONMetadata,
 )
-from src.pixeletica.api.routes.form_parsers import parse_line_visibilities
 from src.pixeletica.api.services import storage, task_queue
 from src.pixeletica.dithering import get_algorithm_by_name
 from src.pixeletica.image_ops import resize_image
@@ -254,6 +256,14 @@ async def get_preview_conversion(
                 }
             },
         },
+        400: {
+            "description": "Bad Request - Invalid JSON metadata",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Invalid JSON metadata format"}
+                }
+            },
+        },
         413: {
             "description": "File too large",
             "content": {
@@ -263,53 +273,109 @@ async def get_preview_conversion(
             },
         },
     },
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "multipart/form-data": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "image_file": {
+                                "type": "string",
+                                "format": "binary",
+                                "description": "Image file to convert",
+                            },
+                            "metadata": {
+                                "type": "string",
+                                "example": json.dumps(
+                                    {
+                                        "width": 128,
+                                        "height": 128,
+                                        "dithering_algorithm": "floyd_steinberg",
+                                        "color_palette": "minecraft",
+                                        "origin_x": 0,
+                                        "origin_y": 100,
+                                        "origin_z": 0,
+                                        "chunk_line_color": "#FF0000FF",
+                                        "block_line_color": "#000000FF",
+                                        "line_visibilities": [
+                                            "no_lines",
+                                            "block_grid_only",
+                                            "chunk_lines_only",
+                                            "both",
+                                        ],
+                                        "image_division": 2,
+                                        "generate_schematic": True,
+                                        "schematic_name": "my_schematic",
+                                        "schematic_author": "Pixeletica API",
+                                        "schematic_description": "An awesome schematic",
+                                        "generate_web_files": True,
+                                    },
+                                    indent=2,
+                                ),
+                                "description": "JSON string containing all metadata for the conversion task",
+                            },
+                        },
+                        "required": ["image_file", "metadata"],
+                    }
+                }
+            }
+        }
+    },
 )
 async def start_conversion(
     image_file: UploadFile = File(..., description="Image file to convert"),
-    width: int = Form(..., description="Target width in pixels"),
-    height: int = Form(..., description="Target height in pixels"),
-    dithering_algorithm: DitherAlgorithm = Form(
-        default=DitherAlgorithm.FLOYD_STEINBERG,
-        description="Dithering algorithm to apply",
-    ),
-    color_palette: str = Form(
-        default="minecraft", description="Color palette to use for block mapping"
-    ),
-    origin_x: int = Form(default=0, description="X-coordinate origin in Minecraft"),
-    origin_y: int = Form(default=100, description="Y-coordinate (height) origin"),
-    origin_z: int = Form(default=0, description="Z-coordinate origin in Minecraft"),
-    chunk_line_color: str = Form(
-        default="#FF0000FF", description="Hex color for chunk lines (RGBA)"
-    ),
-    block_line_color: str = Form(
-        default="#000000FF", description="Hex color for block grid lines (RGBA)"
-    ),
-    line_visibilities: List[LineVisibilityOption] = Depends(parse_line_visibilities),
-    image_division: int = Form(
-        default=1, description="Number of parts to divide the image into"
-    ),
-    generate_schematic: bool = Form(
-        default=False, description="Whether to generate a litematica schematic"
-    ),
-    schematic_name: Optional[str] = Form(
-        default=None, description="Name of the schematic file"
-    ),
-    schematic_author: str = Form(
-        default="Pixeletica API", description="Author of the schematic"
-    ),
-    schematic_description: Optional[str] = Form(
-        default=None, description="Description of the schematic"
-    ),
-    generate_web_files: bool = Form(
-        default=True, description="Generate web viewer files"
+    metadata: str = Form(
+        ..., description="JSON string containing all metadata for the conversion task"
     ),
 ) -> TaskResponse:
     """
-    Start a new image conversion task using form data mapped to a Pydantic model.
+    Start a new image conversion task using REST-standard multipart form data.
 
-    This endpoint accepts an image and configuration parameters,
-    creates a new task, and returns a task ID for status tracking.
+    This endpoint accepts:
+    - An image file in the 'image_file' field
+    - A JSON string in the 'metadata' field containing all configuration parameters
+
+    The metadata JSON should follow the schema of the ConversionJSONMetadata model.
+
+    Example metadata JSON:
+    ```json
+    {
+      "width": 128,
+      "height": 128,
+      "dithering_algorithm": "floyd_steinberg",
+      "color_palette": "minecraft",
+      "origin_x": 0,
+      "origin_y": 100,
+      "origin_z": 0,
+      "chunk_line_color": "#FF0000FF",
+      "block_line_color": "#000000FF",
+      "line_visibilities": ["no_lines", "block_grid_only", "chunk_lines_only", "both"],
+      "image_division": 2,
+      "generate_schematic": true,
+      "schematic_name": "my_schematic",
+      "schematic_author": "Pixeletica API",
+      "schematic_description": "An awesome schematic",
+      "generate_web_files": true
+    }
+    ```
+
+    Returns a task ID for status tracking.
     """
+    # Parse the metadata JSON
+    try:
+        metadata_json = json.loads(metadata)
+        metadata_model = ConversionJSONMetadata(**metadata_json)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON metadata format. Must be a valid JSON string.",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error parsing metadata: {str(e)}",
+        )
     # Check file size
     if image_file.size > MAX_FILE_SIZE:
         raise HTTPException(
@@ -335,29 +401,20 @@ async def start_conversion(
             detail=f"Invalid image data: {str(e)}",
         )
 
-    # Prepare task data dictionary from the form data
-    task_data: Dict[str, Any] = {
-        "width": width,
-        "height": height,
-        "dithering_algorithm": dithering_algorithm.value,
-        "color_palette": color_palette,
-        "origin_x": origin_x,
-        "origin_y": origin_y,
-        "origin_z": origin_z,
-        "chunk_line_color": chunk_line_color,
-        "block_line_color": block_line_color,
-        "image_division": image_division,
-        "generate_schematic": generate_schematic,
-        "schematic_name": schematic_name,
-        "schematic_author": schematic_author,
-        "schematic_description": schematic_description,
-        "generate_web_files": generate_web_files,
-        "image": image_data_b64,
-        "filename": image_file.filename,
-    }
+    # Prepare task data dictionary from the metadata model
+    task_data: Dict[str, Any] = metadata_model.dict()
+
+    # Add image data
+    task_data["image"] = image_data_b64
+    task_data["filename"] = image_file.filename
+
+    # Ensure enum values are strings for task queue
+    task_data["dithering_algorithm"] = metadata_model.dithering_algorithm.value
 
     # Convert line visibility options to string values
-    task_data["line_visibilities"] = [vis.value for vis in line_visibilities]
+    task_data["line_visibilities"] = [
+        vis.value for vis in metadata_model.line_visibilities
+    ]
 
     # Define export types constants
     EXPORT_TYPE_WEB = "web"
@@ -374,10 +431,12 @@ async def start_conversion(
 
     # Set version options for each line visibility configuration
     task_data["version_options"] = {
-        "no_lines": LineVisibilityOption.NO_LINES in line_visibilities,
-        "only_block_lines": LineVisibilityOption.BLOCK_GRID_ONLY in line_visibilities,
-        "only_chunk_lines": LineVisibilityOption.CHUNK_LINES_ONLY in line_visibilities,
-        "both_lines": LineVisibilityOption.BOTH in line_visibilities,
+        "no_lines": LineVisibilityOption.NO_LINES in metadata_model.line_visibilities,
+        "only_block_lines": LineVisibilityOption.BLOCK_GRID_ONLY
+        in metadata_model.line_visibilities,
+        "only_chunk_lines": LineVisibilityOption.CHUNK_LINES_ONLY
+        in metadata_model.line_visibilities,
+        "both_lines": LineVisibilityOption.BOTH in metadata_model.line_visibilities,
     }
 
     # Remove fields not directly needed by the worker task if any,
