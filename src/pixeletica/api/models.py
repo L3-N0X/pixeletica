@@ -133,9 +133,9 @@ class ConversionStartRequest(BaseModel):
     )
 
     # Export Settings
-    line_visibilities: List[LineVisibilityOption] = Field(
-        default=[LineVisibilityOption.CHUNK_LINES_ONLY],
-        description="List of line visibility options to generate. Can select multiple to generate different versions.",
+    line_visibilities: LineVisibilityOption = Field(
+        default=LineVisibilityOption.CHUNK_LINES_ONLY,
+        description="Line visibility option to use. Only one can be active at a time.",
     )
     image_division: int = Field(
         default=1,
@@ -196,9 +196,9 @@ class ConversionJSONMetadata(BaseModel):
     )
 
     # Export Settings
-    line_visibilities: List[LineVisibilityOption] = Field(
-        default=[LineVisibilityOption.CHUNK_LINES_ONLY],
-        description="List of line visibility options to generate. Can select multiple to generate different versions.",
+    line_visibilities: LineVisibilityOption = Field(
+        default=LineVisibilityOption.CHUNK_LINES_ONLY,
+        description="Line visibility option to use. Only one can be active at a time.",
     )
     image_division: int = Field(
         default=1,
@@ -237,12 +237,7 @@ class ConversionJSONMetadata(BaseModel):
                 "origin_z": 0,
                 "chunk_line_color": "#FF0000FF",
                 "block_line_color": "#000000FF",
-                "line_visibilities": [
-                    "no_lines",
-                    "block_grid_only",
-                    "chunk_lines_only",
-                    "both",
-                ],
+                "line_visibilities": "chunk_lines_only",
                 "image_division": 2,
                 "generate_schematic": True,
                 "schematic_name": "my_schematic",
@@ -269,6 +264,16 @@ class TaskResponse(BaseModel):
     )
 
 
+class FileCategory(str, Enum):
+    """Available categories for output files."""
+
+    DITHERED = "dithered"
+    RENDERED = "rendered"
+    SCHEMATIC = "schematic"
+    WEB = "web"
+    SPLIT = "split"
+
+
 class FileInfo(BaseModel):
     """Information about a generated file."""
 
@@ -276,8 +281,8 @@ class FileInfo(BaseModel):
     filename: str = Field(..., description="Original filename")
     type: str = Field(..., description="MIME type")
     size: int = Field(..., description="File size in bytes")
-    category: str = Field(
-        ..., description="File category (dithered, rendered, schematic, etc.)"
+    category: FileCategory = Field(
+        ..., description="File category (dithered, rendered, schematic, web, split)"
     )
 
 

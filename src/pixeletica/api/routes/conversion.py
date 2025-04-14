@@ -128,16 +128,19 @@ async def apply_dithering_with_timeout(
 
 # Note: The /preview endpoint must be defined BEFORE any /{param} routes
 # to avoid routing conflicts in FastAPI
-@router.get(
+@router.post(
     "/preview",
     summary="Generate Quick Preview Image",
     description="Creates a preview of an image with the specified dimensions and dithering algorithm. "
+    "Accepts an image file upload via multipart form. "
     "Returns the result directly as a PNG image. Has a built-in timeout mechanism for large images.",
     response_description="PNG image with the dithering algorithm applied",
     responses={
         200: {
             "description": "Converted image with dithering applied",
-            "content": {"image/png": {}},
+            "content": {
+                "image/png": {"schema": {"type": "string", "format": "binary"}}
+            },
         },
         400: {
             "description": "Bad Request - Invalid dimensions or algorithm",
@@ -167,24 +170,60 @@ async def apply_dithering_with_timeout(
         },
     },
     tags=["conversion"],
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "multipart/form-data": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "image_file": {
+                                "type": "string",
+                                "format": "binary",
+                                "description": "Image file to preview (optional - if not provided, a blank image will be used)",
+                            },
+                            "width": {
+                                "type": "integer",
+                                "description": "Image width in pixels",
+                            },
+                            "height": {
+                                "type": "integer",
+                                "description": "Image height in pixels",
+                            },
+                            "algorithm": {
+                                "type": "string",
+                                "enum": ["floyd_steinberg", "ordered", "random"],
+                                "description": "Dithering algorithm to apply",
+                            },
+                        },
+                        "required": ["width", "height"],
+                    }
+                }
+            }
+        }
+    },
 )
 async def get_preview_conversion(
-    width: int = Query(..., gt=0, description="Image width in pixels"),
-    height: int = Query(..., gt=0, description="Image height in pixels (minimum: 1)"),
-    algorithm: DitherAlgorithm = Query(
+    width: int = Form(..., gt=0, description="Image width in pixels"),
+    height: int = Form(..., gt=0, description="Image height in pixels (minimum: 1)"),
+    algorithm: DitherAlgorithm = Form(
         DitherAlgorithm.FLOYD_STEINBERG,
         description="Dithering algorithm to apply (floyd_steinberg, ordered, or random)",
+    ),
+    image_file: Optional[UploadFile] = File(
+        None, description="Image file to preview (optional)"
     ),
 ):
     """
     Generate a quick preview of a converted image with specified dimensions and dithering.
 
-    This endpoint creates a blank image with the specified dimensions, applies the selected
-    dithering algorithm, and returns the result directly. For large images, there's a timeout
-    to abort processing if it takes too long.
+    This endpoint accepts an image file via multipart form along with conversion parameters.
+    If no image is provided, it creates a blank white image with the specified dimensions.
+    It applies the selected dithering algorithm and returns the result directly.
+    For large images, there's a timeout to abort processing if it takes too long.
 
     - Required: width, height
-    - Optional: algorithm (default: floyd_steinberg)
+    - Optional: image_file, algorithm (default: floyd_steinberg)
 
     Returns the converted image directly as PNG.
 
@@ -201,6 +240,23 @@ async def get_preview_conversion(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Image dimensions too large for preview. Please reduce width and/or height.",
             )
+
+        # Create the base image (blank or from uploaded file)
+        if image_file:
+            # Read the uploaded image
+            image_data = await image_file.read()
+            try:
+                image = Image.open(io.BytesIO(image_data))
+                # Resize to requested dimensions
+                image = resize_image(image, width, height)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid image file: {str(e)}",
+                )
+        else:
+            # Create a blank white image
+            image = Image.new("RGB", (width, height), color="white")
 
         # Apply dithering with timeout
         try:
@@ -298,12 +354,7 @@ async def get_preview_conversion(
                                         "origin_z": 0,
                                         "chunk_line_color": "#FF0000FF",
                                         "block_line_color": "#000000FF",
-                                        "line_visibilities": [
-                                            "no_lines",
-                                            "block_grid_only",
-                                            "chunk_lines_only",
-                                            "both",
-                                        ],
+                                        "line_visibilities": "chunk_lines_only",
                                         "image_division": 2,
                                         "generate_schematic": True,
                                         "schematic_name": "my_schematic",
@@ -350,7 +401,7 @@ async def start_conversion(
       "origin_z": 0,
       "chunk_line_color": "#FF0000FF",
       "block_line_color": "#000000FF",
-      "line_visibilities": ["no_lines", "block_grid_only", "chunk_lines_only", "both"],
+      "line_visibilities": "chunk_lines_only",
       "image_division": 2,
       "generate_schematic": true,
       "schematic_name": "my_schematic",
@@ -411,10 +462,8 @@ async def start_conversion(
     # Ensure enum values are strings for task queue
     task_data["dithering_algorithm"] = metadata_model.dithering_algorithm.value
 
-    # Convert line visibility options to string values
-    task_data["line_visibilities"] = [
-        vis.value for vis in metadata_model.line_visibilities
-    ]
+    # Convert line visibility option to string value
+    task_data["line_visibilities"] = metadata_model.line_visibilities.value
 
     # Define export types constants
     EXPORT_TYPE_WEB = "web"
@@ -429,14 +478,14 @@ async def start_conversion(
     if task_data.get("image_division", 1) > 1:
         task_data["export_types"].append(EXPORT_TYPE_SPLIT)
 
-    # Set version options for each line visibility configuration
+    # Set version options for the line visibility configuration
     task_data["version_options"] = {
-        "no_lines": LineVisibilityOption.NO_LINES in metadata_model.line_visibilities,
-        "only_block_lines": LineVisibilityOption.BLOCK_GRID_ONLY
-        in metadata_model.line_visibilities,
-        "only_chunk_lines": LineVisibilityOption.CHUNK_LINES_ONLY
-        in metadata_model.line_visibilities,
-        "both_lines": LineVisibilityOption.BOTH in metadata_model.line_visibilities,
+        "no_lines": metadata_model.line_visibilities == LineVisibilityOption.NO_LINES,
+        "only_block_lines": metadata_model.line_visibilities
+        == LineVisibilityOption.BLOCK_GRID_ONLY,
+        "only_chunk_lines": metadata_model.line_visibilities
+        == LineVisibilityOption.CHUNK_LINES_ONLY,
+        "both_lines": metadata_model.line_visibilities == LineVisibilityOption.BOTH,
     }
 
     # Remove fields not directly needed by the worker task if any,
@@ -619,7 +668,32 @@ async def list_files(task_id: str, category: Optional[str] = None) -> FileListRe
     return FileListResponse(taskId=task_id, files=files)
 
 
-@router.get("/{task_id}/files/{file_id}")
+@router.get(
+    "/{task_id}/files/{file_id}",
+    responses={
+        200: {
+            "description": "File downloaded successfully",
+            "content": {
+                "application/octet-stream": {
+                    "schema": {"type": "string", "format": "binary"}
+                },
+                "image/png": {"schema": {"type": "string", "format": "binary"}},
+                "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
+                "application/zip": {"schema": {"type": "string", "format": "binary"}},
+            },
+        },
+        404: {
+            "description": "Task or file not found",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "File not found: example_file_id"}
+                }
+            },
+        },
+    },
+    summary="Download a specific file",
+    operation_id="downloadFile",
+)
 async def download_file(task_id: str, file_id: str):
     """
     Download a specific file from a conversion task.
@@ -652,7 +726,37 @@ async def download_file(task_id: str, file_id: str):
     )
 
 
-@router.get("/{task_id}/download")
+@router.get(
+    "/{task_id}/download",
+    responses={
+        200: {
+            "description": "ZIP file with all task files",
+            "content": {
+                "application/zip": {"schema": {"type": "string", "format": "binary"}}
+            },
+        },
+        404: {
+            "description": "Task not found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Task not found: d290f1ee-6c54-4b01-90e6-d701748f0851"
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Failed to create ZIP archive",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Failed to create ZIP archive"}
+                }
+            },
+        },
+    },
+    summary="Download all task files",
+    operation_id="downloadAllFiles",
+)
 async def download_all_files(task_id: str):
     """
     Download all files from a conversion task as a ZIP archive.
@@ -681,7 +785,37 @@ async def download_all_files(task_id: str):
     )
 
 
-@router.post("/{task_id}/download")
+@router.post(
+    "/{task_id}/download",
+    responses={
+        200: {
+            "description": "ZIP file with selected task files",
+            "content": {
+                "application/zip": {"schema": {"type": "string", "format": "binary"}}
+            },
+        },
+        404: {
+            "description": "Task not found",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Task not found: d290f1ee-6c54-4b01-90e6-d701748f0851"
+                    }
+                }
+            },
+        },
+        500: {
+            "description": "Failed to create ZIP archive",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Failed to create ZIP archive"}
+                }
+            },
+        },
+    },
+    summary="Download selected task files",
+    operation_id="downloadSelectedFiles",
+)
 async def download_selected_files(task_id: str, request: SelectiveDownloadRequest):
     """
     Download selected files from a conversion task as a ZIP archive.

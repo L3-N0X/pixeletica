@@ -3,47 +3,50 @@ Utility functions for parsing form data in FastAPI routes.
 """
 
 import json
-from typing import List
 from fastapi import Form, HTTPException, status
 from src.pixeletica.api.models import LineVisibilityOption
 
 
 async def parse_line_visibilities(
     line_visibilities: str = Form(default=None),
-) -> List[LineVisibilityOption]:
+) -> LineVisibilityOption:
     """
     Parse line_visibilities parameter from form data.
-    Expects a JSON string array like '["no_lines","block_grid_only"]'
+    Expects a string enum value like 'no_lines' or 'chunk_lines_only'
 
     Returns:
-        List of LineVisibilityOption enum values
+        A LineVisibilityOption enum value
     """
     if not line_visibilities:
         # Return default value
-        return [LineVisibilityOption.CHUNK_LINES_ONLY]
+        return LineVisibilityOption.CHUNK_LINES_ONLY
 
     try:
-        # Parse the JSON string array
-        values = json.loads(line_visibilities)
+        # Try to parse as a JSON string first (for backwards compatibility)
+        try:
+            parsed_value = json.loads(line_visibilities)
 
-        # Validate each value is a valid enum option
-        result = []
-        for val in values:
-            try:
-                result.append(LineVisibilityOption(val))
-            except ValueError:
+            # If it's a JSON array, take the first value (backwards compatibility)
+            if isinstance(parsed_value, list) and len(parsed_value) > 0:
+                value = parsed_value[0]
+            # If it's a string directly, use it
+            elif isinstance(parsed_value, str):
+                value = parsed_value
+            else:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid line visibility option: {val}. Expected one of: {[v.value for v in LineVisibilityOption]}",
+                    detail=f"Invalid line visibility format: {line_visibilities}. Expected a string enum value.",
                 )
 
-        return result
-    except json.JSONDecodeError:
-        # Try to handle a single value case
-        try:
-            return [LineVisibilityOption(line_visibilities)]
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid line_visibilities format. Expected JSON array or single value. Got: {line_visibilities}",
-            )
+            return LineVisibilityOption(value)
+
+        except json.JSONDecodeError:
+            # Not JSON, treat as raw string value
+            return LineVisibilityOption(line_visibilities)
+
+    except ValueError:
+        valid_options = [v.value for v in LineVisibilityOption]
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid line visibility option: {line_visibilities}. Expected one of: {valid_options}",
+        )

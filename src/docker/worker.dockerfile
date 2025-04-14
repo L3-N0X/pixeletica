@@ -29,6 +29,13 @@ COPY . /app/
 # Install Python dependencies
 RUN pip install --no-cache-dir -e .
 
+# Create necessary directories with appropriate permissions
+RUN mkdir -p /app/out/api_tasks \
+    && mkdir -p /app/out/rendered \
+    && mkdir -p /app/out/exports \
+    && mkdir -p /app/out/logs \
+    && mkdir -p /app/out/cache
+
 # Create and set up a non-root user
 RUN useradd -m pixeletica \
     && chown -R pixeletica:pixeletica /app

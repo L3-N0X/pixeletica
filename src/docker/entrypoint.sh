@@ -33,6 +33,38 @@ if [ ! -d /app/tasks ]; then
     echo "Created tasks directory"
 fi
 
+# Ensure output directory structure exists with correct permissions
+if [ ! -d /app/out/api_tasks ]; then
+    mkdir -p /app/out/api_tasks
+    echo "Created output directory structure: api_tasks"
+fi
+
+if [ ! -d /app/out/rendered ]; then
+    mkdir -p /app/out/rendered
+    echo "Created output directory structure: rendered"
+fi
+
+if [ ! -d /app/out/exports ]; then
+    mkdir -p /app/out/exports
+    echo "Created output directory structure: exports"
+fi
+
+if [ ! -d /app/out/logs ]; then
+    mkdir -p /app/out/logs
+    echo "Created output directory structure: logs"
+fi
+
+if [ ! -d /app/out/cache ]; then
+    mkdir -p /app/out/cache
+    echo "Created output directory structure: cache"
+fi
+
+# Set proper permissions if running as root
+if [ "$(id -u)" = "0" ]; then
+    chown -R pixeletica:pixeletica /app/out
+    echo "Set ownership of output directories to pixeletica user"
+fi
+
 # Check Redis connection if needed
 if [ "$WAIT_FOR_REDIS" = "true" ]; then
     echo "Waiting for Redis to be ready..."
