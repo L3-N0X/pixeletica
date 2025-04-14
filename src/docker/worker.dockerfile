@@ -34,6 +34,7 @@ RUN mkdir -p /app/out/api_tasks \
     && mkdir -p /app/out/rendered \
     && mkdir -p /app/out/exports \
     && mkdir -p /app/out/logs \
+    && mkdir -p /app/tasks \
     && mkdir -p /app/out/cache
 
 # Create and set up a non-root user
