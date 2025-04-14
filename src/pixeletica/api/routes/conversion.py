@@ -379,7 +379,7 @@ async def get_preview_conversion(
                                         "origin_z": 0,
                                         "chunk_line_color": "#FF0000FF",
                                         "block_line_color": "#000000FF",
-                                        "line_visibilities": "chunk_lines_only",
+                                        "line_visibilities": ["chunk_lines_only"],
                                         "image_division": 2,
                                         "generate_schematic": True,
                                         "schematic_name": "my_schematic",
@@ -426,7 +426,7 @@ async def start_conversion(
       "origin_z": 0,
       "chunk_line_color": "#FF0000FF",
       "block_line_color": "#000000FF",
-      "line_visibilities": "chunk_lines_only",
+      "line_visibilities": ["chunk_lines_only"],
       "image_division": 2,
       "generate_schematic": true,
       "schematic_name": "my_schematic",
@@ -487,8 +487,10 @@ async def start_conversion(
     # Ensure enum values are strings for task queue
     task_data["dithering_algorithm"] = metadata_model.dithering_algorithm.value
 
-    # Convert line visibility option to string value
-    task_data["line_visibilities"] = metadata_model.line_visibilities.value
+    # Convert line visibility options to string values
+    task_data["line_visibilities"] = [
+        option.value for option in metadata_model.line_visibilities
+    ]
 
     # Define export types constants
     EXPORT_TYPE_WEB = "web"
@@ -505,12 +507,12 @@ async def start_conversion(
 
     # Set version options for the line visibility configuration
     task_data["version_options"] = {
-        "no_lines": metadata_model.line_visibilities == LineVisibilityOption.NO_LINES,
-        "only_block_lines": metadata_model.line_visibilities
-        == LineVisibilityOption.BLOCK_GRID_ONLY,
-        "only_chunk_lines": metadata_model.line_visibilities
-        == LineVisibilityOption.CHUNK_LINES_ONLY,
-        "both_lines": metadata_model.line_visibilities == LineVisibilityOption.BOTH,
+        "no_lines": LineVisibilityOption.NO_LINES in metadata_model.line_visibilities,
+        "only_block_lines": LineVisibilityOption.BLOCK_GRID_ONLY
+        in metadata_model.line_visibilities,
+        "only_chunk_lines": LineVisibilityOption.CHUNK_LINES_ONLY
+        in metadata_model.line_visibilities,
+        "both_lines": LineVisibilityOption.BOTH in metadata_model.line_visibilities,
     }
 
     # Remove fields not directly needed by the worker task if any,

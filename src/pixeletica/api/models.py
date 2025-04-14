@@ -57,9 +57,13 @@ class ExportSettings(BaseModel):
         default=0, description="Z-coordinate origin in Minecraft world"
     )
     drawChunkLines: bool = Field(default=True, description="Draw chunk boundary lines")
-    chunkLineColor: str = Field(default="#FF0000", description="Color for chunk lines")
+    chunkLineColor: str = Field(
+        default="#FF0000FF", description="Color for chunk lines"
+    )
     drawBlockLines: bool = Field(default=True, description="Draw block boundary lines")
-    blockLineColor: str = Field(default="#000000", description="Color for block lines")
+    blockLineColor: str = Field(
+        default="#0000006F", description="Color for block lines"
+    )
     # Removed splitCount, replaced by image_division in ConversionStartRequest
     versionOptions: Dict = Field(
         default={}, description="Additional version-specific options"
