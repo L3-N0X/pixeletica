@@ -52,10 +52,10 @@ app.include_router(conversion.router)
 app.include_router(maps.router)
 
 
-# Define app lifespan to manage startup/shutdown events
-@app.lifespan
-async def lifespan(app: FastAPI):
-    # Startup: Initialize rate limiter
+# Define app startup event to initialize resources
+@app.on_event("startup")
+async def startup_event():
+    # Initialize rate limiter
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     try:
         redis_instance = redis.from_url(redis_url)
@@ -64,18 +64,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to connect to Redis: {e}")
 
-    yield  # This separates startup from shutdown logic
 
+# Define app shutdown event to cleanup resources
+@app.on_event("shutdown")
+async def shutdown_event():
     # Shutdown logic (if any) would go here
+    pass
 
 
-@app.get("/", tags=["health"])
+@app.get("/", tags=["Health"])
 async def root() -> Dict[str, Any]:
     """
-    Root endpoint for health checks.
+    Root endpoint for health checking the API.
 
     Returns:
-        Dictionary with API name, version, and status.
+        Dictionary with API name, version, status.
     """
     return {"name": "Pixeletica API", "version": "0.1.0", "status": "online"}
 
