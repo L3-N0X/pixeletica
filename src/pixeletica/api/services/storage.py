@@ -141,7 +141,49 @@ def save_task_metadata(task_id: str, metadata: Dict, force: bool = False) -> Pat
             # Verify the file was written correctly by reading it back
             try:
                 with open(metadata_file, "r") as f:
-                    verification_data = json.load(f)
+                    # Read the file content first to perform cleanup if needed
+                    file_content = f.read()
+
+                    # Try to load the JSON content
+                    try:
+                        verification_data = json.loads(file_content)
+                    except json.JSONDecodeError as jde:
+                        logger.warning(f"JSON decode error during verification: {jde}")
+
+                        # Attempt to fix common JSON issues - trailing commas, etc.
+                        if "Extra data" in str(jde):
+                            # Get position info from the error
+                            error_parts = str(jde).split("char ")
+                            if len(error_parts) > 1:
+                                try:
+                                    error_pos = int(error_parts[1])
+                                    # Truncate the content at the error position
+                                    fixed_content = file_content[:error_pos]
+
+                                    # Find the last closing brace
+                                    last_brace_pos = fixed_content.rfind("}")
+                                    if last_brace_pos > 0:
+                                        clean_content = fixed_content[
+                                            : last_brace_pos + 1
+                                        ]
+
+                                        # Write the cleaned content back
+                                        with open(metadata_file, "w") as fw:
+                                            fw.write(clean_content)
+
+                                        # Try to verify again with the cleaned content
+                                        verification_data = json.loads(clean_content)
+                                        logger.info(
+                                            f"Successfully fixed and verified metadata JSON"
+                                        )
+                                except Exception as fix_error:
+                                    logger.error(f"Failed to fix JSON: {fix_error}")
+                                    return metadata_file
+                        else:
+                            # For other JSON errors, just return without verification
+                            return metadata_file
+
+                    # Check the status matches
                     if verification_data.get("status") == metadata.get("status"):
                         logger.info(
                             f"Verified metadata status: {metadata.get('status')}"
@@ -193,28 +235,74 @@ def load_task_metadata(task_id: str, bypass_cache: bool = False) -> Optional[Dic
     for attempt in range(retry_count):
         try:
             with open(metadata_file, "r") as f:
-                data = json.load(f)
+                # Read the file content first
+                file_content = f.read()
+
+                try:
+                    # Try to parse the JSON normally
+                    data = json.loads(file_content)
+                except json.JSONDecodeError as jde:
+                    logger.error(
+                        f"JSON decode error in metadata for task {task_id} (attempt {attempt+1}/{retry_count}): {jde}"
+                    )
+
+                    # Try to fix the JSON if we encounter common issues
+                    if "Extra data" in str(jde):
+                        # Get position info from the error
+                        error_parts = str(jde).split("char ")
+                        if len(error_parts) > 1:
+                            try:
+                                error_pos = int(error_parts[1])
+                                # Truncate the content at the error position
+                                fixed_content = file_content[:error_pos]
+
+                                # Find the last closing brace
+                                last_brace_pos = fixed_content.rfind("}")
+                                if last_brace_pos > 0:
+                                    clean_content = fixed_content[: last_brace_pos + 1]
+
+                                    # Try to parse the cleaned content
+                                    data = json.loads(clean_content)
+
+                                    # Write the cleaned content back
+                                    with open(metadata_file, "w") as fw:
+                                        fw.write(clean_content)
+
+                                    logger.info(
+                                        f"Successfully fixed JSON for task {task_id}"
+                                    )
+                            except Exception as fix_error:
+                                logger.error(
+                                    f"Failed to fix JSON for task {task_id}: {fix_error}"
+                                )
+                                if attempt == retry_count - 1:
+                                    return None
+                                time.sleep(0.5)
+                                continue
+                    else:
+                        # For other JSON errors, try again next attempt
+                        if attempt == retry_count - 1:
+                            logger.critical(
+                                f"Failed to decode task metadata JSON after {retry_count} attempts"
+                            )
+                            return None
+                        import time
+
+                        time.sleep(0.5)  # Short delay before retry
+                        continue
 
                 # Ensure taskId is set correctly
                 if "taskId" not in data:
                     data["taskId"] = task_id
 
                 return data
-        except json.JSONDecodeError as e:
-            logger.error(
-                f"JSON decode error in metadata for task {task_id} (attempt {attempt+1}/{retry_count}): {e}"
-            )
+        except Exception as e:
+            logger.error(f"Failed to load metadata for task {task_id}: {e}")
             if attempt == retry_count - 1:
-                logger.critical(
-                    f"Failed to decode task metadata JSON after {retry_count} attempts"
-                )
                 return None
             import time
 
             time.sleep(0.5)  # Short delay before retry
-        except Exception as e:
-            logger.error(f"Failed to load metadata for task {task_id}: {e}")
-            return None
 
 
 def save_base64_image(task_id: str, image_data: str, filename: str) -> Path:
