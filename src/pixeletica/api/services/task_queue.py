@@ -462,8 +462,53 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
         }
 
     try:
+        # Define the total number of steps in the process for accurate progress tracking
+        # Each step represents a major operation in the task progress
+        steps = {
+            "initialization": {"weight": 5, "completed": False},
+            "loading_image": {"weight": 5, "completed": False},
+            "resizing_image": {"weight": 10, "completed": False},
+            "applying_dither": {"weight": 25, "completed": False},
+            "saving_dithered": {"weight": 10, "completed": False},
+            "rendering_blocks": {"weight": 15, "completed": False},
+            "exporting": {"weight": 15, "completed": False},
+            "generating_schematic": {"weight": 10, "completed": False},
+            "creating_archive": {"weight": 5, "completed": False},
+        }
+
+        # Function to calculate and update current progress
+        def update_progress(step_name, sub_progress=100):
+            if step_name not in steps:
+                return
+
+            # Mark this step as completed
+            steps[step_name]["completed"] = True
+
+            # Calculate total progress
+            completed_weight = sum(
+                step["weight"] for step_name, step in steps.items() if step["completed"]
+            )
+            current_weight = (
+                steps[step_name]["weight"] * (sub_progress / 100)
+                if sub_progress < 100
+                else 0
+            )
+
+            total_progress = int(completed_weight + current_weight)
+
+            # Ensure progress stays within 0-100 range
+            total_progress = max(0, min(100, total_progress))
+
+            # Update task status with calculated progress
+            update_task_status(task_id, TaskStatus.PROCESSING, progress=total_progress)
+
+            # Log the progress update
+            logger.info(
+                f"Task {task_id} progress: {total_progress}% (Step: {step_name}, Sub-progress: {sub_progress}%)"
+            )
+
         # Update task status to processing
-        update_task_status(task_id, TaskStatus.PROCESSING, progress=5)
+        update_progress("initialization")
 
         # Load task metadata
         metadata = storage.load_task_metadata(task_id, bypass_cache=True)
@@ -485,7 +530,7 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
             raise ValueError("Input image path not found in task metadata")
 
         # Load the image
-        update_task_status(task_id, TaskStatus.PROCESSING, progress=10)
+        update_progress("loading_image")
         original_img = load_image(input_image_path)
         if not original_img:
             raise ValueError(f"Failed to load image from {input_image_path}")
@@ -495,13 +540,15 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
         target_height = config.get("height")
 
         if target_width or target_height:
-            update_task_status(task_id, TaskStatus.PROCESSING, progress=20)
+            update_progress("resizing_image", 50)  # Start of resize operation
             resized_img = resize_image(original_img, target_width, target_height)
+            update_progress("resizing_image")  # Resize complete
         else:
             resized_img = original_img
+            update_progress("resizing_image")  # Skip resize but mark as complete
 
         # Apply dithering algorithm
-        update_task_status(task_id, TaskStatus.PROCESSING, progress=30)
+        update_progress("applying_dither", 10)  # Start of dithering (10% complete)
         algorithm_name = config.get("algorithm", "floyd_steinberg")
         dither_func, algorithm_id = get_algorithm_by_name(algorithm_name)
 
@@ -522,13 +569,21 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
             csv_path = "./src/minecraft/block-colors-2025.csv"
 
         logger.info(f"Loading block colors from {csv_path}")
+        update_progress(
+            "applying_dither", 50
+        )  # Loading block colors (50% of dithering step)
+
         if not load_block_colors(csv_path):
             raise ValueError(f"Failed to load block colors from {csv_path}")
 
+        update_progress(
+            "applying_dither", 75
+        )  # Starting actual dithering (75% of dithering step)
         dithered_img, block_ids = dither_func(resized_img)
+        update_progress("applying_dither")  # Dithering complete
 
         # Save dithered image
-        update_task_status(task_id, TaskStatus.PROCESSING, progress=50)
+        update_progress("saving_dithered", 50)  # Start saving dithered image
         filename = config.get("filename", "image.png")
         base_name = Path(filename).stem
 
@@ -541,9 +596,10 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
         # Update metadata with dithered image info
         metadata["ditheredImage"] = dithered_file_info
         storage.save_task_metadata(task_id, metadata)
+        update_progress("saving_dithered")  # Saving complete
 
         # Render blocks with textures
-        update_task_status(task_id, TaskStatus.PROCESSING, progress=60)
+        update_progress("rendering_blocks", 20)  # Start of rendering
         try:
             block_image = render_blocks_from_block_ids(block_ids)
 
@@ -559,7 +615,7 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                 storage.save_task_metadata(task_id, metadata)
 
                 # Process export settings
-                update_task_status(task_id, TaskStatus.PROCESSING, progress=70)
+                update_progress("exporting", 20)  # Start of export settings processing
 
                 # Extract export settings from various possible locations
                 export_settings = {}
@@ -632,12 +688,14 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                             logger.error(
                                 f"Failed to import export file {export_file}: {e}"
                             )
+
+                update_progress("exporting")  # Export complete
         except Exception as e:
             logger.error(f"Error during rendering or export for task {task_id}: {e}")
             # Continue processing even if rendering fails
 
         # Generate schematic if requested
-        update_task_status(task_id, TaskStatus.PROCESSING, progress=85)
+        update_progress("generating_schematic", 20)  # Start of schematic generation
 
         # Extract schematic settings
         schematic_settings = {}
@@ -698,8 +756,10 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                 metadata["schematicError"] = str(e)
                 storage.save_task_metadata(task_id, metadata)
 
+        update_progress("generating_schematic")  # Schematic generation complete
+
         # Generate ZIP archive of all files
-        update_task_status(task_id, TaskStatus.PROCESSING, progress=95)
+        update_progress("creating_archive", 50)  # Start of archive creation
         try:
             zip_path = storage.create_zip_archive(task_id)
             if zip_path:
@@ -714,6 +774,8 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                 storage.save_task_metadata(task_id, metadata)
         except Exception as e:
             logger.error(f"Error creating ZIP archive for task {task_id}: {e}")
+
+        update_progress("creating_archive")  # Archive creation complete
 
         # Ensure task is marked as completed
         logger.info(f"Task {task_id} finished processing, updating to COMPLETED status")

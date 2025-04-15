@@ -16,6 +16,9 @@ from typing import Optional, Dict, Any, List
 import json
 import uuid
 from datetime import datetime
+import os
+import time
+import logging
 
 from fastapi import (
     APIRouter,
@@ -29,8 +32,9 @@ from fastapi import (
     Query,
     Body,
 )
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, Response
 from fastapi_limiter.depends import RateLimiter
+from starlette.requests import Request
 
 from src.pixeletica.api.config import (
     MAX_FILE_SIZE,
@@ -49,14 +53,16 @@ from src.pixeletica.dithering import get_algorithm_by_name
 from src.pixeletica.image_ops import resize_image
 from PIL import Image
 import numpy as np
-import time
-import logging
 
 # Set up logging
 logger = logging.getLogger("pixeletica.api.routes.conversion")
 
 # Initialize router
 router = APIRouter(prefix="/conversion", tags=["conversion"])
+
+# Get CORS settings from environment variable or use default
+cors_origins_str = os.environ.get("CORS_ORIGINS", "http://localhost:5000")
+cors_origins = cors_origins_str.split(",") if cors_origins_str != "*" else ["*"]
 
 
 async def validate_file_size(file: UploadFile = File(...)):
@@ -850,34 +856,40 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
     response_model=FileListResponse,
     responses={
         200: {
-            "description": "List of files for the task",
+            "description": "List of files for the task, grouped by category",
             "content": {
                 "application/json": {
                     "example": {
                         "taskId": "d290f1ee-6c54-4b01-90e6-d701748f0851",
-                        "files": [
-                            {
-                                "fileId": "dithered_image",
-                                "filename": "dithered.png",
-                                "type": "image/png",
-                                "size": 1024567,
-                                "category": "dithered",
-                            },
-                            {
-                                "fileId": "rendered_image",
-                                "filename": "rendered.png",
-                                "type": "image/png",
-                                "size": 2048123,
-                                "category": "rendered",
-                            },
-                            {
-                                "fileId": "schematic",
-                                "filename": "build.litematic",
-                                "type": "application/octet-stream",
-                                "size": 512789,
-                                "category": "schematic",
-                            },
-                        ],
+                        "categories": {
+                            "dithered": [
+                                {
+                                    "fileId": "dithered_image",
+                                    "filename": "dithered.png",
+                                    "type": "image/png",
+                                    "size": 1024567,
+                                    "category": "dithered",
+                                }
+                            ],
+                            "rendered": [
+                                {
+                                    "fileId": "rendered_image",
+                                    "filename": "rendered.png",
+                                    "type": "image/png",
+                                    "size": 2048123,
+                                    "category": "rendered",
+                                }
+                            ],
+                            "schematic": [
+                                {
+                                    "fileId": "schematic",
+                                    "filename": "build.litematic",
+                                    "type": "application/octet-stream",
+                                    "size": 512789,
+                                    "category": "schematic",
+                                }
+                            ],
+                        },
                     }
                 }
             },
@@ -894,11 +906,18 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
         },
     },
 )
-async def list_files(task_id: str, category: Optional[str] = None) -> FileListResponse:
+async def list_files(
+    task_id: str, include_web: bool = False, category: Optional[str] = None
+) -> FileListResponse:
     """
-    List files generated for a task.
+    List files generated for a task, grouped by category.
 
-    Optionally filter by category (dithered, rendered, schematic, web).
+    Files are automatically organized by their categories in the response.
+
+    Args:
+        task_id: The unique task identifier
+        include_web: Whether to include web files in the response (default: False)
+        category: Optionally filter to only include files from a specific category
     """
     task_status = task_queue.get_task_status(task_id, bypass_cache=True)
 
@@ -910,23 +929,55 @@ async def list_files(task_id: str, category: Optional[str] = None) -> FileListRe
     # Get list of files
     files = storage.list_task_files(task_id)
 
+    # Filter out web files if include_web is False
+    if not include_web:
+        files = [f for f in files if f.get("category") != "web"]
+
     # Filter by category if specified
     if category:
-        files = [f for f in files if f["category"] == category]
+        files = [f for f in files if f.get("category") == category]
 
     # Remove file path from response for security
     for file in files:
         if "path" in file:
             del file["path"]
 
-    return FileListResponse(taskId=task_id, files=files)
+    # Group files by category
+    categories = {}
+    for file in files:
+        file_category = file.get("category", "other")
+        if file_category not in categories:
+            categories[file_category] = []
+        categories[file_category].append(file)
+
+    return FileListResponse(taskId=task_id, categories=categories)
 
 
-import os
+# Handle OPTIONS requests for file download endpoint
+@router.options("/{task_id}/files/{file_id}")
+async def options_download_file(task_id: str, file_id: str):
+    """
+    Handle OPTIONS requests for the file download endpoint to support CORS preflight requests.
+    """
+    # Get the request origin if available (for CORS handling)
+    request = Request(scope={"type": "http"})
+    origin = request.headers.get(
+        "origin", cors_origins[0] if cors_origins != ["*"] else "*"
+    )
 
-# Get CORS settings from environment variable or use default
-cors_origins_str = os.environ.get("CORS_ORIGINS", "http://localhost:5000")
-cors_origin = cors_origins_str.split(",")[0] if cors_origins_str != "*" else "*"
+    headers = {
+        "Access-Control-Allow-Origin": (
+            origin
+            if origin in cors_origins or cors_origins == ["*"]
+            else cors_origins[0]
+        ),
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Max-Age": "600",  # Cache the preflight request for 10 minutes
+    }
+
+    return Response(status_code=204, headers=headers)
 
 
 @router.get(
@@ -981,20 +1032,58 @@ async def download_file(task_id: str, file_id: str):
     if not content_type:
         content_type = "application/octet-stream"
 
+    # Get the request origin if available (for CORS handling)
+    request = Request(scope={"type": "http"})
+    origin = request.headers.get(
+        "origin", cors_origins[0] if cors_origins != ["*"] else "*"
+    )
+
     # Add CORS headers for file downloads
     headers = {
-        "Access-Control-Allow-Origin": cors_origin,
+        "Access-Control-Allow-Origin": (
+            origin
+            if origin in cors_origins or cors_origins == ["*"]
+            else cors_origins[0]
+        ),
         "Access-Control-Allow-Methods": "GET, OPTIONS",
         "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Credentials": "true",
     }
 
-    # Return file for download with CORS headers
+    # Return file for download with appropriate CORS headers
     return FileResponse(
         path=file_path,
         media_type=content_type,
         filename=file_path.name,
         headers=headers,
     )
+
+
+# Handle OPTIONS requests for bulk download endpoint
+@router.options("/{task_id}/download")
+async def options_download_all_files(task_id: str):
+    """
+    Handle OPTIONS requests for the bulk download endpoint to support CORS preflight requests.
+    """
+    # Get the request origin if available (for CORS handling)
+    request = Request(scope={"type": "http"})
+    origin = request.headers.get(
+        "origin", cors_origins[0] if cors_origins != ["*"] else "*"
+    )
+
+    headers = {
+        "Access-Control-Allow-Origin": (
+            origin
+            if origin in cors_origins or cors_origins == ["*"]
+            else cors_origins[0]
+        ),
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Max-Age": "600",  # Cache the preflight request for 10 minutes
+    }
+
+    return Response(status_code=204, headers=headers)
 
 
 @router.get(
@@ -1048,14 +1137,25 @@ async def download_all_files(task_id: str):
             detail="Failed to create ZIP archive",
         )
 
+    # Get the request origin if available (for CORS handling)
+    request = Request(scope={"type": "http"})
+    origin = request.headers.get(
+        "origin", cors_origins[0] if cors_origins != ["*"] else "*"
+    )
+
     # Add CORS headers for file downloads
     headers = {
-        "Access-Control-Allow-Origin": cors_origin,
+        "Access-Control-Allow-Origin": (
+            origin
+            if origin in cors_origins or cors_origins == ["*"]
+            else cors_origins[0]
+        ),
         "Access-Control-Allow-Methods": "GET, OPTIONS",
         "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Credentials": "true",
     }
 
-    # Return ZIP file for download with CORS headers
+    # Return ZIP file for download with appropriate CORS headers
     return FileResponse(
         path=zip_path,
         media_type="application/zip",
@@ -1095,7 +1195,7 @@ async def download_all_files(task_id: str):
     summary="Download selected task files",
     operation_id="downloadSelectedFiles",
 )
-async def download_selected_files(task_id: str, request: SelectiveDownloadRequest):
+async def download_selected_files(task_id: str, request_body: SelectiveDownloadRequest):
     """
     Download selected files from a conversion task as a ZIP archive.
 
@@ -1109,7 +1209,7 @@ async def download_selected_files(task_id: str, request: SelectiveDownloadReques
         )
 
     # Create ZIP archive with selected files
-    zip_path = storage.create_zip_archive(task_id, request.fileIds)
+    zip_path = storage.create_zip_archive(task_id, request_body.fileIds)
 
     if not zip_path or not zip_path.exists():
         raise HTTPException(
@@ -1117,14 +1217,25 @@ async def download_selected_files(task_id: str, request: SelectiveDownloadReques
             detail="Failed to create ZIP archive",
         )
 
+    # Get the request origin if available (for CORS handling)
+    request = Request(scope={"type": "http"})
+    origin = request.headers.get(
+        "origin", cors_origins[0] if cors_origins != ["*"] else "*"
+    )
+
     # Add CORS headers for file downloads
     headers = {
-        "Access-Control-Allow-Origin": cors_origin,
+        "Access-Control-Allow-Origin": (
+            origin
+            if origin in cors_origins or cors_origins == ["*"]
+            else cors_origins[0]
+        ),
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Credentials": "true",
     }
 
-    # Return ZIP file for download with CORS headers
+    # Return ZIP file for download with appropriate CORS headers
     return FileResponse(
         path=zip_path,
         media_type="application/zip",

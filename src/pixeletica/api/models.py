@@ -291,10 +291,12 @@ class FileInfo(BaseModel):
 
 
 class FileListResponse(BaseModel):
-    """Response model listing available files for a task."""
+    """Response model listing available files for a task, grouped by category."""
 
     taskId: str = Field(..., description="Task identifier")
-    files: List[FileInfo] = Field(default_factory=list, description="Available files")
+    categories: Dict[str, List[FileInfo]] = Field(
+        default_factory=dict, description="Files grouped by category"
+    )
 
 
 class SelectiveDownloadRequest(BaseModel):
