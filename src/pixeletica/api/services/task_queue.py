@@ -650,6 +650,13 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                 web_output_dir = str(storage.TASKS_DIR / task_id / "web")
                 logger.info(f"Exporting files to web directory: {web_output_dir}")
 
+                # Ensure the web directory exists and has necessary subdirectories
+                os.makedirs(web_output_dir, exist_ok=True)
+
+                # Create web/rendered directory for compatibility with maps API
+                rendered_dir = os.path.join(web_output_dir, "rendered")
+                os.makedirs(rendered_dir, exist_ok=True)
+
                 export_results = export_processed_image(
                     block_image,
                     base_name,

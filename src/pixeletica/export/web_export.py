@@ -138,7 +138,7 @@ def export_web_tiles(
     # Create an index.html file for viewing the tiles
     create_web_viewer_html(output_dir, metadata)
 
-    # Save metadata as JSON
+    # Save metadata as JSON (only in one location)
     metadata_path = os.path.join(output_dir, "metadata.json")
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)

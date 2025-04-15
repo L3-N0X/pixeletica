@@ -963,12 +963,11 @@ async def list_files(
 
 # Handle OPTIONS requests for file download endpoint
 @router.options("/{task_id}/files/{file_id}")
-async def options_download_file(task_id: str, file_id: str):
+async def options_download_file(task_id: str, file_id: str, request: Request):
     """
     Handle OPTIONS requests for the file download endpoint to support CORS preflight requests.
     """
     # Get the request origin if available (for CORS handling)
-    request = Request(scope={"type": "http"})
     origin = request.headers.get(
         "origin", cors_origins[0] if cors_origins != ["*"] else "*"
     )
@@ -1014,7 +1013,7 @@ async def options_download_file(task_id: str, file_id: str):
     summary="Download a specific file",
     operation_id="downloadFile",
 )
-async def download_file(task_id: str, file_id: str):
+async def download_file(task_id: str, file_id: str, request: Request):
     """
     Download a specific file from a conversion task.
 
@@ -1040,8 +1039,7 @@ async def download_file(task_id: str, file_id: str):
     if not content_type:
         content_type = "application/octet-stream"
 
-    # Get the request origin if available (for CORS handling)
-    request = Request(scope={"type": "http"})
+    # Get the request origin from the passed request parameter
     origin = request.headers.get(
         "origin", cors_origins[0] if cors_origins != ["*"] else "*"
     )
@@ -1069,12 +1067,11 @@ async def download_file(task_id: str, file_id: str):
 
 # Handle OPTIONS requests for bulk download endpoint
 @router.options("/{task_id}/download")
-async def options_download_all_files(task_id: str):
+async def options_download_all_files(task_id: str, request: Request):
     """
     Handle OPTIONS requests for the bulk download endpoint to support CORS preflight requests.
     """
     # Get the request origin if available (for CORS handling)
-    request = Request(scope={"type": "http"})
     origin = request.headers.get(
         "origin", cors_origins[0] if cors_origins != ["*"] else "*"
     )
@@ -1125,7 +1122,7 @@ async def options_download_all_files(task_id: str):
     summary="Download all task files",
     operation_id="downloadAllFiles",
 )
-async def download_all_files(task_id: str):
+async def download_all_files(task_id: str, request: Request):
     """
     Download all files from a conversion task as a ZIP archive.
     """
@@ -1145,8 +1142,7 @@ async def download_all_files(task_id: str):
             detail="Failed to create ZIP archive",
         )
 
-    # Get the request origin if available (for CORS handling)
-    request = Request(scope={"type": "http"})
+    # Get the request origin from the passed request parameter
     origin = request.headers.get(
         "origin", cors_origins[0] if cors_origins != ["*"] else "*"
     )
@@ -1203,7 +1199,9 @@ async def download_all_files(task_id: str):
     summary="Download selected task files",
     operation_id="downloadSelectedFiles",
 )
-async def download_selected_files(task_id: str, request_body: SelectiveDownloadRequest):
+async def download_selected_files(
+    task_id: str, request_body: SelectiveDownloadRequest, request: Request
+):
     """
     Download selected files from a conversion task as a ZIP archive.
 
@@ -1225,8 +1223,7 @@ async def download_selected_files(task_id: str, request_body: SelectiveDownloadR
             detail="Failed to create ZIP archive",
         )
 
-    # Get the request origin if available (for CORS handling)
-    request = Request(scope={"type": "http"})
+    # Get the request origin from the passed request parameter
     origin = request.headers.get(
         "origin", cors_origins[0] if cors_origins != ["*"] else "*"
     )
