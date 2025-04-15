@@ -953,6 +953,7 @@ async def list_files(
                 f"Invalid file category: {file_category}. Using default category 'dithered'."
             )
             file_category = FileCategory.DITHERED.value
+        file["category"] = file_category
         if file_category not in categories:
             categories[file_category] = []
         categories[file_category].append(file)
