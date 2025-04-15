@@ -125,17 +125,18 @@ def create_task(request_data: Dict) -> str:
     return task_id
 
 
-def get_task_status(task_id: str) -> Optional[Dict]:
+def get_task_status(task_id: str, bypass_cache: bool = False) -> Optional[Dict]:
     """
     Get the current status of a task.
 
     Args:
         task_id: Task identifier
+        bypass_cache: If True, bypass the metadata cache and load directly from disk
 
     Returns:
         Dictionary with task status information or None if task not found
     """
-    return storage.load_task_metadata(task_id)
+    return storage.load_task_metadata(task_id, bypass_cache=bypass_cache)
 
 
 def update_task_status(

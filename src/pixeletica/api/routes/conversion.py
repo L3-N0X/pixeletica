@@ -529,7 +529,7 @@ async def start_conversion(
     try:
         task_id = task_queue.create_task(task_data)  # Pass the prepared dict
         logger.info(f"Task created with ID: {task_id}")
-        task_status = task_queue.get_task_status(task_id)
+        task_status = task_queue.get_task_status(task_id, bypass_cache=True)
         logger.info(f"Initial task status: {task_status}")
     except Exception as e:
         logger.error(f"Error creating conversion task: {e}", exc_info=True)
@@ -611,7 +611,8 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
 
     Returns the current status, progress, and any error information.
     """
-    task_status = task_queue.get_task_status(task_id)
+    # Always bypass cache to get the most recent status
+    task_status = task_queue.get_task_status(task_id, bypass_cache=True)
 
     if not task_status:
         raise HTTPException(
@@ -682,7 +683,7 @@ async def list_files(task_id: str, category: Optional[str] = None) -> FileListRe
 
     Optionally filter by category (dithered, rendered, schematic, web).
     """
-    task_status = task_queue.get_task_status(task_id)
+    task_status = task_queue.get_task_status(task_id, bypass_cache=True)
 
     if not task_status:
         raise HTTPException(
@@ -736,7 +737,7 @@ async def download_file(task_id: str, file_id: str):
 
     Returns the file for direct download.
     """
-    task_status = task_queue.get_task_status(task_id)
+    task_status = task_queue.get_task_status(task_id, bypass_cache=True)
 
     if not task_status:
         raise HTTPException(
@@ -797,7 +798,7 @@ async def download_all_files(task_id: str):
     """
     Download all files from a conversion task as a ZIP archive.
     """
-    task_status = task_queue.get_task_status(task_id)
+    task_status = task_queue.get_task_status(task_id, bypass_cache=True)
 
     if not task_status:
         raise HTTPException(
@@ -858,7 +859,7 @@ async def download_selected_files(task_id: str, request: SelectiveDownloadReques
 
     Specify file IDs to include in the download.
     """
-    task_status = task_queue.get_task_status(task_id)
+    task_status = task_queue.get_task_status(task_id, bypass_cache=True)
 
     if not task_status:
         raise HTTPException(
@@ -912,7 +913,7 @@ async def delete_task(task_id: str, background_tasks: BackgroundTasks):
     """
     Delete a conversion task and all associated files.
     """
-    task_status = task_queue.get_task_status(task_id)
+    task_status = task_queue.get_task_status(task_id, bypass_cache=True)
 
     if not task_status:
         raise HTTPException(
