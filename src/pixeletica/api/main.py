@@ -38,13 +38,17 @@ app = FastAPI(
     redoc_url=None,  # Disable default redoc
 )
 
+# Get CORS settings from environment variable or use default
+cors_origins_str = os.environ.get("CORS_ORIGINS", "http://localhost:5000")
+cors_origins = cors_origins_str.split(",") if cors_origins_str != "*" else ["*"]
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Add routes
