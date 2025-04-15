@@ -922,6 +922,13 @@ async def list_files(task_id: str, category: Optional[str] = None) -> FileListRe
     return FileListResponse(taskId=task_id, files=files)
 
 
+import os
+
+# Get CORS settings from environment variable or use default
+cors_origins_str = os.environ.get("CORS_ORIGINS", "http://localhost:5000")
+cors_origin = cors_origins_str.split(",")[0] if cors_origins_str != "*" else "*"
+
+
 @router.get(
     "/{task_id}/files/{file_id}",
     responses={
@@ -974,9 +981,19 @@ async def download_file(task_id: str, file_id: str):
     if not content_type:
         content_type = "application/octet-stream"
 
-    # Return file for download
+    # Add CORS headers for file downloads
+    headers = {
+        "Access-Control-Allow-Origin": cors_origin,
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+    }
+
+    # Return file for download with CORS headers
     return FileResponse(
-        path=file_path, media_type=content_type, filename=file_path.name
+        path=file_path,
+        media_type=content_type,
+        filename=file_path.name,
+        headers=headers,
     )
 
 
@@ -1031,11 +1048,19 @@ async def download_all_files(task_id: str):
             detail="Failed to create ZIP archive",
         )
 
-    # Return ZIP file for download
+    # Add CORS headers for file downloads
+    headers = {
+        "Access-Control-Allow-Origin": cors_origin,
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+    }
+
+    # Return ZIP file for download with CORS headers
     return FileResponse(
         path=zip_path,
         media_type="application/zip",
         filename=f"pixeletica_task_{task_id}.zip",
+        headers=headers,
     )
 
 
@@ -1092,11 +1117,19 @@ async def download_selected_files(task_id: str, request: SelectiveDownloadReques
             detail="Failed to create ZIP archive",
         )
 
-    # Return ZIP file for download
+    # Add CORS headers for file downloads
+    headers = {
+        "Access-Control-Allow-Origin": cors_origin,
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+    }
+
+    # Return ZIP file for download with CORS headers
     return FileResponse(
         path=zip_path,
         media_type="application/zip",
         filename=f"pixeletica_task_{task_id}_selected.zip",
+        headers=headers,
     )
 
 
