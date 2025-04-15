@@ -47,6 +47,7 @@ from src.pixeletica.api.models import (
     DitherAlgorithm,
     LineVisibilityOption,
     ConversionJSONMetadata,
+    FileCategory,
 )
 from src.pixeletica.api.services import storage, task_queue
 from src.pixeletica.dithering import get_algorithm_by_name
@@ -946,11 +947,12 @@ async def list_files(
     categories = {}
     for file in files:
         file_category = file.get("category")
-        if not file_category or file_category not in [e.value for e in file_category]:
+        valid_categories = [e.value for e in FileCategory]
+        if not file_category or file_category not in valid_categories:
             logger.error(
                 f"Invalid file category: {file_category}. Using default category 'dithered'."
             )
-            file_category = file_category.DITHERED.value
+            file_category = FileCategory.DITHERED.value
         if file_category not in categories:
             categories[file_category] = []
         categories[file_category].append(file)
