@@ -108,6 +108,40 @@ def save_task_metadata(task_id: str, metadata: Dict, force: bool = False) -> Pat
             time.sleep(0.5)  # Short delay before retry
 
 
+def clear_metadata_cache(task_id: str):
+    """
+    Clear the metadata cache for a specific task.
+
+    Args:
+        task_id: Task identifier
+    """
+
+    # Create a new function to clear cache
+    def clear_cache():
+        load_task_metadata.cache_clear()
+        logger.info(f"Cache cleared for task {task_id} metadata")
+
+    # Clear the cache
+    clear_cache()
+
+    # Additionally try to clear Redis cache if applicable
+    try:
+        import redis
+        import os
+
+        redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+        r = redis.Redis.from_url(redis_url)
+
+        # Clear any keys related to this task
+        task_key_pattern = f"*{task_id}*"
+        keys = r.keys(task_key_pattern)
+        if keys:
+            r.delete(*keys)
+            logger.info(f"Cleared {len(keys)} Redis keys for task {task_id}")
+    except Exception as e:
+        logger.error(f"Error clearing Redis cache for task {task_id}: {e}")
+
+
 @lru_cache(maxsize=128)
 def load_task_metadata(task_id: str, bypass_cache: bool = False) -> Optional[Dict]:
     """
@@ -122,13 +156,7 @@ def load_task_metadata(task_id: str, bypass_cache: bool = False) -> Optional[Dic
     """
     # If bypass_cache is True, clear this entry from cache before loading
     if bypass_cache:
-        # Create a new function that only accepts task_id to match the cache signature
-        def clear_single_entry(key):
-            load_task_metadata.cache_clear()
-            logger.info(f"Cache cleared for task {key} metadata")
-
-        # Clear this specific entry
-        clear_single_entry(task_id)
+        clear_metadata_cache(task_id)
 
     metadata_file = TASKS_DIR / task_id / "metadata" / "task.json"
 

@@ -25,19 +25,45 @@ from src.pixeletica.schematic_generator import generate_schematic
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("pixeletica.api.task_queue")
 
-# Configure Celery
+# Enable more verbose Celery logging
+logging.getLogger("celery").setLevel(logging.DEBUG)
+
+# Configure Celery with more explicit settings
 redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 logger.info(f"Initializing Celery with broker URL: {redis_url}")
-celery_app = Celery("pixeletica", broker=redis_url, backend=redis_url)
+
+celery_app = Celery("pixeletica")
+celery_app.conf.update(
+    broker_url=redis_url,
+    result_backend=redis_url,
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
+    task_track_started=True,
+    task_acks_late=False,  # Acknowledge tasks before execution to avoid re-queuing on failure
+    worker_prefetch_multiplier=1,  # Process one task at a time
+    worker_cancel_long_running_tasks_on_connection_loss=False,  # Don't cancel tasks if connection lost
+    worker_max_tasks_per_child=50,  # Restart worker after processing 50 tasks to prevent memory leaks
+    broker_connection_retry_on_startup=True,  # Retry connecting to broker on startup
+    broker_connection_max_retries=10,  # Max retries for broker connection
+)
+
+# Register the module that contains the task to ensure proper discovery
+celery_app.autodiscover_tasks(["src.pixeletica.api.services"])
 
 # Configure Celery task routes - ensure tasks are sent to the 'celery' queue
 # which is where the worker is listening by default
 celery_app.conf.task_routes = {
-    "pixeletica.api.services.task_queue.*": {"queue": "celery"}
+    "pixeletica.api.services.task_queue.*": {"queue": "celery"},
+    "src.pixeletica.api.services.task_queue.*": {
+        "queue": "celery"
+    },  # Add full path as alternate
 }
 
 # Import all modules that define tasks so they're properly registered
 logger.info("Registering Celery tasks...")
+logger.info("Current Celery app: %s", celery_app)
 
 
 def create_task(request_data: Dict) -> str:
@@ -50,16 +76,30 @@ def create_task(request_data: Dict) -> str:
     Returns:
         Task ID as a string
     """
+    # Log function entry for debugging
+    logger.info(
+        f"Creating new task with request data keys: {list(request_data.keys())}"
+    )
+
     # Verify Redis connection at task creation time
     try:
         from redis import Redis
 
         r = Redis.from_url(redis_url)
-        r.ping()
-        logger.info(f"Redis connection verified for task creation")
+        ping_result = r.ping()
+        logger.info(f"Redis connection verified for task creation: ping={ping_result}")
+
+        # Additional Redis check
+        r.set("pixeletica_test_key", "test_value")
+        test_value = r.get("pixeletica_test_key")
+        if test_value == b"test_value":
+            logger.info("Redis read/write test successful")
+        else:
+            logger.warning(f"Redis read/write test failed: got {test_value}")
     except Exception as e:
-        logger.error(f"Redis connection failed during task creation: {e}")
-        # Continue anyway as we'll use the file-based task queue
+        logger.error(
+            f"Redis connection failed during task creation: {e}", exc_info=True
+        )
 
     # Generate a unique task ID
     task_id = str(uuid.uuid4())
@@ -100,27 +140,81 @@ def create_task(request_data: Dict) -> str:
 
     # Start processing task if image was saved successfully
     if task_metadata["status"] != TaskStatus.FAILED:
-        # Use the registered task name to ensure proper routing in Celery
-        result = celery_app.send_task(
-            "pixeletica.api.services.task_queue.process_image_task", args=[task_id]
-        )
-        logger.info(f"Task {task_id} queued for processing with task_id: {result.id}")
-        logger.info(f"Task state: {result.state}")
-
-        # Verify the task was registered with Redis
         try:
-            from redis import Redis
+            # Get the actual task function to avoid string reference issues
+            task_function = process_image_task
+            logger.info(f"Sending task using function: {task_function.name}")
 
-            r = Redis.from_url(redis_url)
-            task_key = f"celery-task-meta-{result.id}"
-            if r.exists(task_key):
-                logger.info(f"Task {result.id} found in Redis")
-            else:
-                logger.warning(
-                    f"Task {result.id} NOT found in Redis - this may indicate a connection issue"
+            # Apply the task directly which gives us more control
+            result = task_function.apply_async(
+                args=[task_id],
+                task_id=str(uuid.uuid4()),  # Generate a new unique task ID
+                queue="celery",  # Explicitly specify the queue
+                retry=True,  # Enable retries
+                retry_policy={  # Configure retry policy
+                    "max_retries": 3,
+                    "interval_start": 0,
+                    "interval_step": 60,
+                    "interval_max": 180,
+                },
+            )
+
+            logger.info(
+                f"Task {task_id} queued for processing with task_id: {result.id}"
+            )
+            logger.info(f"Task state: {result.state}")
+            logger.info(f"Task result backend: {result.backend}")
+
+            # More thorough task verification in Redis
+            try:
+                from redis import Redis
+
+                r = Redis.from_url(redis_url)
+                # Check for various possible task keys in Redis
+                task_key_patterns = [
+                    f"celery-task-meta-{result.id}",
+                    f"_celery_task_meta-{result.id}",
+                    f"celery-task-{result.id}",
+                ]
+
+                found = False
+                for task_key in task_key_patterns:
+                    if r.exists(task_key):
+                        logger.info(
+                            f"Task {result.id} found in Redis under key: {task_key}"
+                        )
+                        found = True
+                        break
+
+                if not found:
+                    # Check if the task is in the queue
+                    queue_key = "celery"
+                    queue_length = r.llen(queue_key)
+                    logger.warning(
+                        f"Task {result.id} not found in Redis - checking queue '{queue_key}' (length: {queue_length})"
+                    )
+
+                    # Add a task directly to Redis as a test
+                    test_task_id = str(uuid.uuid4())
+                    test_key = f"celery-task-meta-{test_task_id}"
+                    r.set(test_key, "test")
+                    if r.exists(test_key):
+                        logger.info(
+                            f"Test key {test_key} successfully created in Redis"
+                        )
+                        r.delete(test_key)
+                    else:
+                        logger.error(f"Failed to create test key {test_key} in Redis")
+            except Exception as e:
+                logger.error(
+                    f"Failed to check Redis for task {result.id}: {e}", exc_info=True
                 )
         except Exception as e:
-            logger.error(f"Failed to check Redis for task {result.id}: {e}")
+            logger.error(f"Failed to queue task {task_id}: {e}", exc_info=True)
+            # Update task status to failed since queueing failed
+            update_task_status(
+                task_id, TaskStatus.FAILED, error=f"Failed to queue task: {str(e)}"
+            )
 
     return task_id
 
@@ -136,7 +230,54 @@ def get_task_status(task_id: str, bypass_cache: bool = False) -> Optional[Dict]:
     Returns:
         Dictionary with task status information or None if task not found
     """
-    return storage.load_task_metadata(task_id, bypass_cache=bypass_cache)
+    # Log this function call for debugging
+    logger.info(f"Getting status for task {task_id} (bypass_cache={bypass_cache})")
+
+    # Get the metadata from storage
+    metadata = storage.load_task_metadata(task_id, bypass_cache=bypass_cache)
+
+    if metadata:
+        logger.info(
+            f"Task {task_id} status: {metadata.get('status')}, progress: {metadata.get('progress')}"
+        )
+    else:
+        logger.warning(f"No metadata found for task {task_id}")
+
+    # If the task is in processing status for too long, it might be stuck
+    if metadata and metadata.get("status") == TaskStatus.PROCESSING:
+        try:
+            # Check if the task has been processing for more than 10 minutes
+            updated_time = datetime.fromisoformat(metadata.get("updated", ""))
+            now = datetime.now()
+            processing_time = (now - updated_time).total_seconds()
+
+            if processing_time > 600:  # 10 minutes
+                logger.warning(
+                    f"Task {task_id} has been processing for {processing_time} seconds, this may indicate a stuck task"
+                )
+
+                # Try to check if the task is still in Celery
+                try:
+                    from redis import Redis
+
+                    r = Redis.from_url(redis_url)
+                    celery_task_id = metadata.get("celery_task_id")
+                    if celery_task_id:
+                        task_key = f"celery-task-meta-{celery_task_id}"
+                        if r.exists(task_key):
+                            logger.info(
+                                f"Celery task {celery_task_id} still exists in Redis"
+                            )
+                        else:
+                            logger.warning(
+                                f"Celery task {celery_task_id} not found in Redis, but status is still PROCESSING"
+                            )
+                except Exception as e:
+                    logger.error(f"Failed to check Redis for stuck task {task_id}: {e}")
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error checking task processing time: {e}")
+
+    return metadata
 
 
 def update_task_status(
@@ -192,6 +333,9 @@ def update_task_status(
     soft_time_limit=3000,
     time_limit=3600,
     queue="celery",  # Explicitly specify the queue
+    track_started=True,  # Track when task is started
+    ignore_result=False,  # Don't ignore results
+    acks_late=False,  # Acknowledge task before execution
 )
 def process_image_task(self, task_id: str) -> Dict[str, Any]:
     """
@@ -206,6 +350,19 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
     start_time = datetime.now()
     logger.info(f"⭐ WORKER RECEIVED TASK: {task_id} at {start_time}")
     logger.info(f"Task request details: {self.request!r}")
+    logger.info(f"Worker process ID: {os.getpid()}")
+
+    # Update task metadata with celery task ID for tracking
+    try:
+        metadata = storage.load_task_metadata(task_id, bypass_cache=True)
+        if metadata:
+            metadata["celery_task_id"] = self.request.id
+            storage.save_task_metadata(task_id, metadata, force=True)
+            logger.info(f"Updated task metadata with celery_task_id: {self.request.id}")
+    except Exception as e:
+        logger.error(
+            f"Failed to update metadata with celery task ID: {e}", exc_info=True
+        )
 
     try:
         # Verify Redis connection before starting
@@ -453,8 +610,38 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
             metadata["progress"] = 100
             metadata["updated"] = completion_time
             metadata["completedAt"] = completion_time
+
+            # Make sure task result is saved in Redis
+            try:
+                from redis import Redis
+
+                r = Redis.from_url(redis_url)
+                result_key = f"celery-task-meta-{self.request.id}"
+                result_data = {
+                    "status": "SUCCESS",
+                    "result": {
+                        "taskId": task_id,
+                        "status": TaskStatus.COMPLETED.value,
+                        "message": f"Image processing completed successfully",
+                    },
+                    "traceback": None,
+                    "children": [],
+                    "date_done": completion_time,
+                }
+                r.set(result_key, json.dumps(result_data))
+                logger.info(f"Set result in Redis at key {result_key}")
+            except Exception as e:
+                logger.error(
+                    f"Failed to manually set task result in Redis: {e}", exc_info=True
+                )
+
+            # Save final metadata
             storage.save_task_metadata(task_id, metadata, force=True)
             logger.info(f"✅ Task metadata updated with COMPLETED status: {metadata}")
+
+            # Clear Redis cache for this task's metadata to ensure fresh reads
+            storage.clear_metadata_cache(task_id)
+            logger.info(f"✅ Cleared Redis cache for task {task_id}")
         else:
             # Create new metadata if it doesn't exist
             new_metadata = {

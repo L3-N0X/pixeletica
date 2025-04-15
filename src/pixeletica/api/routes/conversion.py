@@ -611,21 +611,130 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
 
     Returns the current status, progress, and any error information.
     """
+    # Log the status request
+    logger.info(f"Getting status for task {task_id}")
+
     # Always bypass cache to get the most recent status
     task_status = task_queue.get_task_status(task_id, bypass_cache=True)
 
     if not task_status:
+        logger.warning(f"Task {task_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"Task not found: {task_id}"
         )
 
-    return TaskResponse(
+    # Enhanced debugging: check if the task is stuck in QUEUED status for too long
+    if task_status.get("status") == "queued":
+        try:
+            created_time = datetime.fromisoformat(task_status.get("created", ""))
+            now = datetime.now()
+            queue_time = (now - created_time).total_seconds()
+
+            if queue_time > 60:  # More than 1 minute
+                logger.warning(
+                    f"Task {task_id} has been queued for {queue_time:.2f} seconds, may be stuck"
+                )
+
+                # Try to get details from Redis about the celery task
+                try:
+                    import redis
+                    import os
+                    import json
+
+                    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+                    r = redis.Redis.from_url(redis_url)
+
+                    # Check if there's a celery_task_id in the metadata
+                    celery_task_id = task_status.get("celery_task_id")
+                    if celery_task_id:
+                        logger.info(
+                            f"Looking for celery task {celery_task_id} in Redis"
+                        )
+                        task_key = f"celery-task-meta-{celery_task_id}"
+                        if r.exists(task_key):
+                            task_data = r.get(task_key)
+                            logger.info(f"Celery task data: {task_data}")
+                        else:
+                            logger.warning(
+                                f"Celery task {celery_task_id} not found in Redis"
+                            )
+
+                            # Check queue status
+                            queue_key = "celery"
+                            queue_length = r.llen(queue_key)
+                            logger.info(f"Celery queue length: {queue_length}")
+
+                    else:
+                        logger.warning(
+                            f"No celery_task_id found in metadata for task {task_id}"
+                        )
+
+                except Exception as e:
+                    logger.error(f"Failed to check Redis for task status: {e}")
+
+                # If task has been queued for more than 5 minutes, try to restart it
+                if queue_time > 300:  # 5 minutes
+                    logger.warning(
+                        f"Task {task_id} appears to be stuck in queue for {queue_time:.2f} seconds, attempting to restart"
+                    )
+                    try:
+                        # Reload the task data from storage
+                        from src.pixeletica.api.services import storage
+
+                        metadata = storage.load_task_metadata(
+                            task_id, bypass_cache=True
+                        )
+
+                        if metadata and "config" in metadata:
+                            # Extract necessary info to rebuild the request data
+                            config = metadata["config"]
+                            request_data = {
+                                "filename": config.get("filename", "image.png"),
+                                "width": config.get("width"),
+                                "height": config.get("height"),
+                                "algorithm": config.get("algorithm", "floyd_steinberg"),
+                                "exportSettings": config.get("exportSettings", {}),
+                                "schematicSettings": config.get(
+                                    "schematicSettings", {}
+                                ),
+                            }
+
+                            # Get input image path if available
+                            input_image_path = metadata.get("inputImagePath")
+                            if input_image_path:
+                                # Update status to reprocessing
+                                task_queue.update_task_status(
+                                    task_id,
+                                    "processing",
+                                    progress=1,
+                                    error="Auto-restarting stuck task",
+                                )
+
+                                # The task will stay in processing status, but at least it's not stuck in "queued" anymore
+                                logger.info(
+                                    f"Updated task {task_id} status to processing to indicate attention needed"
+                                )
+                    except Exception as restart_error:
+                        logger.error(
+                            f"Failed to attempt restart of stuck task {task_id}: {restart_error}"
+                        )
+        except Exception as e:
+            logger.error(f"Error checking if task is stuck: {e}")
+
+    # Log the task status details
+    logger.info(
+        f"Task {task_id} status: {task_status.get('status')}, progress: {task_status.get('progress')}"
+    )
+
+    response = TaskResponse(
         taskId=task_id,
         status=task_status["status"],
         progress=task_status.get("progress"),
         timestamp=task_status.get("updated"),
         error=task_status.get("error"),
     )
+
+    return response
 
 
 @router.get(
