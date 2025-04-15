@@ -178,21 +178,25 @@ TASK_MAX_PROCESSING_TIME: Maximum allowed processing time (in seconds, default: 
 ### Task Stuck in Processing
 
 1. Check if the task is genuinely stuck using the advanced monitoring tool:
+
    ```
    python src/pixeletica/api/tools/task_queue_monitor.py inspect <task_id>
    ```
 
 2. Check the worker logs for errors:
+
    ```
    docker logs pixeletica_worker_1
    ```
 
 3. Repair the stuck task:
+
    ```
    python src/pixeletica/api/tools/task_queue_monitor.py repair <task_id> --action reset_status
    ```
 
 4. If the task is still problematic, try forcing completion:
+
    ```
    python src/pixeletica/api/tools/task_queue_monitor.py repair <task_id> --action force_complete
    ```
@@ -200,21 +204,25 @@ TASK_MAX_PROCESSING_TIME: Maximum allowed processing time (in seconds, default: 
 ### Workers Not Processing Tasks
 
 1. Check Redis and queue health:
+
    ```
    python src/pixeletica/api/tools/task_queue_monitor.py health
    ```
 
 2. Verify Redis connection:
+
    ```
    docker exec pixeletica_redis_1 redis-cli ping
    ```
 
 3. Check Celery worker status:
+
    ```
    docker exec pixeletica_worker_1 celery -A pixeletica.api.services.task_queue.celery_app inspect active
    ```
 
 4. Restart the worker container if needed:
+
    ```
    docker-compose restart worker
    ```
@@ -222,6 +230,7 @@ TASK_MAX_PROCESSING_TIME: Maximum allowed processing time (in seconds, default: 
 ### Task Data Integrity Issues
 
 1. If you suspect task data corruption, check its metadata:
+
    ```
    python src/pixeletica/api/tools/task_queue_monitor.py inspect <task_id>
    ```
@@ -229,11 +238,13 @@ TASK_MAX_PROCESSING_TIME: Maximum allowed processing time (in seconds, default: 
 2. Look for inconsistencies between Redis storage and file storage
 
 3. Try clearing Redis entries for the task:
+
    ```
    python src/pixeletica/api/tools/task_queue_monitor.py repair <task_id> --action clear_redis
    ```
 
 4. If needed, manually reset or complete the task:
+
    ```
    python src/pixeletica/api/tools/task_queue_monitor.py repair <task_id> --action force_complete
    ```
@@ -243,6 +254,7 @@ TASK_MAX_PROCESSING_TIME: Maximum allowed processing time (in seconds, default: 
 If tasks are being created but not processed:
 
 1. Check Redis connectivity:
+
    ```
    python src/pixeletica/api/tools/task_queue_monitor.py health
    ```

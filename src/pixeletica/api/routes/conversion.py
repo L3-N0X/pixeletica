@@ -14,6 +14,8 @@ import asyncio
 import io
 from typing import Optional, Dict, Any, List
 import json
+import uuid
+import datetime
 
 from fastapi import (
     APIRouter,
@@ -725,14 +727,14 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
                 # If there's a state mismatch, log it
                 if (
                     celery_state == states.SUCCESS
-                    and task_status.get("status") != TaskStatus.COMPLETED.value
+                    and task_status.get("status") != task_status.COMPLETED.value
                 ):
                     logger.warning(
                         f"[REQ-{request_id}] State mismatch: Celery SUCCESS but task status {task_status.get('status')}"
                     )
                 elif (
                     celery_state == states.FAILURE
-                    and task_status.get("status") != TaskStatus.FAILED.value
+                    and task_status.get("status") != task_status.FAILED.value
                 ):
                     logger.warning(
                         f"[REQ-{request_id}] State mismatch: Celery FAILURE but task status {task_status.get('status')}"
