@@ -48,10 +48,22 @@ class BlockRenderer:
         if texture is None:
             texture = self.texture_manager.get_texture(block_id)
 
-        # If no texture is found, create a placeholder
+        # If no texture is found, create a colored placeholder based on the block ID
         if texture is None:
-            # Create a simple placeholder
-            texture = Image.new("RGBA", self.texture_size, (200, 200, 200, 255))
+            # Hash the block ID to get a somewhat consistent color
+            import hashlib
+
+            hash_val = int(hashlib.md5(block_id.encode()).hexdigest(), 16)
+            r = (hash_val & 0xFF0000) >> 16
+            g = (hash_val & 0x00FF00) >> 8
+            b = hash_val & 0x0000FF
+
+            # Create a placeholder with the hashed color
+            texture = Image.new("RGBA", self.texture_size, (r, g, b, 255))
+
+        # Ensure the texture is in RGBA mode to preserve colors
+        if texture.mode != "RGBA":
+            texture = texture.convert("RGBA")
 
         # Scale if needed
         if scale != 1:

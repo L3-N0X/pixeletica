@@ -84,6 +84,7 @@ class TextureManager:
                 if image.height > 16:
                     # Crop to first frame (16x16) for animated textures
                     image = image.crop((0, 0, 16, 16))
+                # Ensure we're preserving color information properly
                 return image
             else:
                 print(f"Texture not found: {texture_path}")
@@ -113,9 +114,13 @@ class TextureManager:
 
         if texture_info:
             if isinstance(texture_info, dict):
-                texture_name = texture_info.get(face)
-                if not texture_name:
-                    texture_name = texture_info.get("side")
+                # Check if there's a specific texture for this face
+                if "texture" in texture_info:
+                    texture_name = texture_info["texture"]
+                else:
+                    texture_name = texture_info.get(face)
+                    if not texture_name:
+                        texture_name = texture_info.get("side")
             else:
                 texture_name = texture_info
 

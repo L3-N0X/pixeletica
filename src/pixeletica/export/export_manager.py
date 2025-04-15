@@ -160,12 +160,18 @@ class ExportManager:
                 split_dir = os.path.join(export_dir, f"split_{split_count}")
                 os.makedirs(split_dir, exist_ok=True)
 
+                # Also create a rendered subdirectory for split images with textures
+                rendered_split_dir = os.path.join(
+                    export_dir, "rendered", f"split_{split_count}"
+                )
+                os.makedirs(rendered_split_dir, exist_ok=True)
+
                 split_results = {}
 
                 if include_no_lines_version:
                     # Split without lines
                     no_lines_paths = split_image(
-                        image, split_dir, f"{base_name}_no_lines", split_count
+                        image, rendered_split_dir, f"{base_name}_no_lines", split_count
                     )
                     split_results["no_lines"] = no_lines_paths
 
@@ -182,7 +188,7 @@ class ExportManager:
                     )
                     with_lines_paths = split_image(
                         with_lines_image,
-                        split_dir,
+                        rendered_split_dir,
                         f"{base_name}_with_lines",
                         split_count,
                     )

@@ -33,10 +33,14 @@ def export_web_tiles(
     # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
 
+    # Create a rendered directory inside output_dir for web tiles
+    rendered_dir = os.path.join(output_dir, "rendered")
+    os.makedirs(rendered_dir, exist_ok=True)
+
     width, height = image.size
 
     # Save the full image for initial loading
-    full_image_path = os.path.join(output_dir, "full-image.png")
+    full_image_path = os.path.join(rendered_dir, "full-image.png")
     # Create a copy of the image to avoid modifying the original
     full_image = image.copy()
     # If the image is large, resize it to a reasonable size for the full image
@@ -62,7 +66,7 @@ def export_web_tiles(
     }
 
     # Create tiles directory structure
-    tiles_base_dir = os.path.join(output_dir, "tiles")
+    tiles_base_dir = os.path.join(rendered_dir, "tiles")
     os.makedirs(tiles_base_dir, exist_ok=True)
 
     # Generate tiles for each zoom level
