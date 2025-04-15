@@ -120,7 +120,8 @@ class ConversionStartRequest(BaseModel):
 
     # Color Palette (defaulted as requested)
     color_palette: str = Field(
-        default="minecraft", description="Color palette to use for block mapping"
+        default="minecraft",
+        description="Color palette to use for block mapping (minecraft = 2025 palette, minecraft-2024 = 2024 palette)",
     )
 
     # Minecraft Origin Coordinates
@@ -183,7 +184,8 @@ class ConversionJSONMetadata(BaseModel):
 
     # Color Palette
     color_palette: str = Field(
-        default="minecraft", description="Color palette to use for block mapping"
+        default="minecraft",
+        description="Color palette to use for block mapping (minecraft = 2025 palette, minecraft-2024 = 2024 palette)",
     )
 
     # Minecraft Origin Coordinates

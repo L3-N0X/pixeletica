@@ -220,7 +220,7 @@ async def apply_dithering_with_timeout(
                             "color_palette": {
                                 "type": "string",
                                 "enum": ["minecraft", "minecraft-2024"],
-                                "description": "Color palette to use for block mapping",
+                                "description": "Color palette to use for block mapping (minecraft = 2025 palette, minecraft-2024 = 2024 palette)",
                             },
                         },
                         "required": ["width", "height"],
@@ -239,7 +239,7 @@ async def get_preview_conversion(
     ),
     color_palette: str = Form(
         "minecraft",
-        description="Color palette to use for block mapping (default: minecraft)",
+        description="Color palette to use for block mapping (default: minecraft - uses 2025 palette)",
     ),
     image_file: Optional[UploadFile] = File(
         None, description="Image file to preview (optional)"
