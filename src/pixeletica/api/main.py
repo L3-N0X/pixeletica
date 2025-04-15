@@ -40,6 +40,7 @@ app = FastAPI(
 
 # Get CORS settings from environment variable or use default
 cors_origins_str = os.environ.get("CORS_ORIGINS", "http://localhost:5000")
+
 cors_origins = cors_origins_str.split(",") if cors_origins_str != "*" else ["*"]
 
 # Add CORS middleware

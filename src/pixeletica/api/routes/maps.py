@@ -35,12 +35,16 @@ async def get_redis() -> redis.Redis:
 # Set up logging
 logger = logging.getLogger("pixeletica.api.routes.maps")
 
-# Initialize router
-router = APIRouter(tags=["maps"])
+# Get CORS settings from environment variable or use default
+cors_origins_str = os.environ.get("CORS_ORIGINS", "http://localhost:5000")
+cors_origins = cors_origins_str.split(",") if cors_origins_str != "*" else ["*"]
+
+# Initialize router with appropriate prefix
+router = APIRouter(prefix="/api", tags=["maps"])
 
 
 @router.get(
-    "/api/maps.json",
+    "/maps.json",
     response_model=MapListResponse,
     responses={
         200: {
@@ -129,7 +133,7 @@ async def list_maps() -> MapListResponse:
 
 
 @router.get(
-    "/api/map/{map_id}/metadata.json",
+    "/map/{map_id}/metadata.json",
     responses={
         200: {
             "description": "Map metadata",
@@ -229,7 +233,40 @@ async def get_map_metadata(map_id: str):
     return metadata
 
 
-@router.get("/api/map/{map_id}/full-image.png")
+# Handle OPTIONS requests for map endpoints
+@router.options("/map/{map_id}/metadata.json")
+@router.options("/map/{map_id}/full-image.png")
+@router.options("/map/{map_id}/thumbnail.png")
+@router.options("/map/{map_id}/tiles/{zoom}/{x}/{y}.png")
+async def options_map_endpoints():
+    """
+    Handle OPTIONS requests for map endpoints to support CORS preflight requests.
+    """
+    from starlette.requests import Request
+    from fastapi.responses import Response
+
+    # Get the request origin if available (for CORS handling)
+    request = Request(scope={"type": "http"})
+    origin = request.headers.get(
+        "origin", cors_origins[0] if cors_origins != ["*"] else "*"
+    )
+
+    headers = {
+        "Access-Control-Allow-Origin": (
+            origin
+            if origin in cors_origins or cors_origins == ["*"]
+            else cors_origins[0]
+        ),
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Max-Age": "600",  # Cache the preflight request for 10 minutes
+    }
+
+    return Response(status_code=204, headers=headers)
+
+
+@router.get("/map/{map_id}/full-image.png")
 async def get_map_full_image(map_id: str):
     """
     Get the full image for a map.
@@ -249,11 +286,33 @@ async def get_map_full_image(map_id: str):
             status_code=404, detail=f"Full image not found for map: {map_id}"
         )
 
-    return FileResponse(path=full_image_path, media_type="image/png")
+    # Add CORS headers for file responses
+    from starlette.requests import Request
+    from fastapi import Response
+
+    # Get the request origin if available (for CORS handling)
+    request = Request(scope={"type": "http"})
+    origin = request.headers.get(
+        "origin", cors_origins[0] if cors_origins != ["*"] else "*"
+    )
+
+    # Add CORS headers for file responses
+    headers = {
+        "Access-Control-Allow-Origin": (
+            origin
+            if origin in cors_origins or cors_origins == ["*"]
+            else cors_origins[0]
+        ),
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Credentials": "true",
+    }
+
+    return FileResponse(path=full_image_path, media_type="image/png", headers=headers)
 
 
 @router.get(
-    "/api/map/{map_id}/thumbnail.png",
+    "/map/{map_id}/thumbnail.png",
     responses={
         200: {"description": "Thumbnail image", "content": {"image/png": {}}},
         404: {
@@ -300,11 +359,32 @@ async def get_map_thumbnail(map_id: str):
             logger.error(f"Failed to create thumbnail: {e}")
             return FileResponse(path=full_image_path, media_type="image/png")
 
-    return FileResponse(path=thumbnail_path, media_type="image/png")
+    # Add CORS headers for file responses
+    from starlette.requests import Request
+
+    # Get the request origin if available (for CORS handling)
+    request = Request(scope={"type": "http"})
+    origin = request.headers.get(
+        "origin", cors_origins[0] if cors_origins != ["*"] else "*"
+    )
+
+    # Add CORS headers for file responses
+    headers = {
+        "Access-Control-Allow-Origin": (
+            origin
+            if origin in cors_origins or cors_origins == ["*"]
+            else cors_origins[0]
+        ),
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Credentials": "true",
+    }
+
+    return FileResponse(path=thumbnail_path, media_type="image/png", headers=headers)
 
 
 @router.get(
-    "/api/map/{map_id}/tiles/{zoom}/{x}/{y}.png",
+    "/map/{map_id}/tiles/{zoom}/{x}/{y}.png",
     responses={
         200: {"description": "Map tile image", "content": {"image/png": {}}},
         404: {
@@ -359,5 +439,28 @@ async def get_map_tile(
     # Cache the tile
     await redis_client.set(tile_key, tile_data, ex=60 * 60)  # Cache for 1 hour
 
-    # Return the file
-    return StreamingResponse(BytesIO(tile_data), media_type="image/png")
+    # Add CORS headers for file responses
+    from starlette.requests import Request
+
+    # Get the request origin if available (for CORS handling)
+    request = Request(scope={"type": "http"})
+    origin = request.headers.get(
+        "origin", cors_origins[0] if cors_origins != ["*"] else "*"
+    )
+
+    # Add CORS headers for file responses
+    headers = {
+        "Access-Control-Allow-Origin": (
+            origin
+            if origin in cors_origins or cors_origins == ["*"]
+            else cors_origins[0]
+        ),
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Credentials": "true",
+    }
+
+    # Return the file with CORS headers
+    return StreamingResponse(
+        BytesIO(tile_data), media_type="image/png", headers=headers
+    )
