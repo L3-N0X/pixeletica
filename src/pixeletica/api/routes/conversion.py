@@ -724,24 +724,57 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
                     f"[REQ-{request_id}] Celery task {celery_id} state: {celery_state}"
                 )
 
-                # If there's a state mismatch, log it
+                # If there's a state mismatch, update our task status accordingly
                 if (
                     celery_state == states.SUCCESS
-                    and task_status.get("status") != task_status.COMPLETED.value
+                    and task_status.get("status") != "completed"
                 ):
                     logger.warning(
-                        f"[REQ-{request_id}] State mismatch: Celery SUCCESS but task status {task_status.get('status')}"
+                        f"[REQ-{request_id}] State mismatch: Celery SUCCESS but task status {task_status.get('status')}. Updating to completed."
                     )
+                    task_status["status"] = "completed"
+                    task_status["progress"] = 100
+                    # Sync back to storage
+                    task_queue.update_task_status(task_id, "completed", 100)
+
                 elif (
                     celery_state == states.FAILURE
-                    and task_status.get("status") != task_status.FAILED.value
+                    and task_status.get("status") != "failed"
                 ):
                     logger.warning(
-                        f"[REQ-{request_id}] State mismatch: Celery FAILURE but task status {task_status.get('status')}"
+                        f"[REQ-{request_id}] State mismatch: Celery FAILURE but task status {task_status.get('status')}. Updating to failed."
                     )
+                    # Get error message if available
+                    error_msg = "Task failed during processing"
+                    try:
+                        if result.result:
+                            if (
+                                isinstance(result.result, dict)
+                                and "error" in result.result
+                            ):
+                                error_msg = result.result["error"]
+                            else:
+                                error_msg = str(result.result)
+                    except Exception as e:
+                        logger.error(
+                            f"[REQ-{request_id}] Could not extract error details: {e}"
+                        )
+
+                    task_status["status"] = "failed"
+                    task_status["error"] = error_msg
+                    # Sync back to storage
+                    task_queue.update_task_status(task_id, "failed", error=error_msg)
 
             except Exception as e:
                 logger.error(f"[REQ-{request_id}] Error checking Celery task: {e}")
+                # Make sure we don't have inconsistent state - if we get an error checking Celery
+                # but the Redis records suggest a failure, mark as failed
+                if (
+                    "redis_state" in task_status
+                    and task_status["redis_state"] == states.FAILURE
+                ):
+                    task_status["status"] = "failed"
+                    task_status["error"] = f"Task processing failed: {str(e)}"
 
         # Log the task status details
         logger.info(

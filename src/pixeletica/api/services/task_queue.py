@@ -17,13 +17,13 @@ from typing import Any, Dict, Optional, Union, List, Tuple
 from celery import Celery, states
 from celery.result import AsyncResult
 
-from pixeletica.api.models import TaskStatus
-from pixeletica.api.services import storage
-from pixeletica.dithering import get_algorithm_by_name
-from pixeletica.export.export_manager import export_processed_image
-from pixeletica.image_ops import load_image, resize_image
-from pixeletica.rendering.block_renderer import render_blocks_from_block_ids
-from pixeletica.schematic_generator import generate_schematic
+from src.pixeletica.api.models import TaskStatus
+from src.pixeletica.api.services import storage
+from src.pixeletica.dithering import get_algorithm_by_name
+from src.pixeletica.export.export_manager import export_processed_image
+from src.pixeletica.image_ops import load_image, resize_image
+from src.pixeletica.rendering.block_renderer import render_blocks_from_block_ids
+from src.pixeletica.schematic_generator import generate_schematic
 
 # Set up logging immediately to capture all initialization
 logging.basicConfig(level=logging.INFO)
@@ -509,7 +509,7 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
             raise ValueError(f"Unknown dithering algorithm: {algorithm_name}")
 
         # Load block colors before applying dithering
-        from pixeletica.block_utils.block_loader import load_block_colors
+        from src.pixeletica.block_utils.block_loader import load_block_colors
 
         # Determine color palette - default to minecraft-2025 if not specified
         color_palette = config.get("color_palette", "minecraft")

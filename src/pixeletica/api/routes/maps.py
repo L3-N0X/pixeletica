@@ -98,6 +98,21 @@ async def list_maps() -> MapListResponse:
                 and (web_dir / "metadata.json").exists()
             ):
 
+                # Get dimensions from web metadata.json if available
+                width = None
+                height = None
+                web_metadata_path = web_dir / "metadata.json"
+                if web_metadata_path.exists():
+                    try:
+                        with open(web_metadata_path, "r") as f:
+                            web_metadata = json.load(f)
+                            width = web_metadata.get("width")
+                            height = web_metadata.get("height")
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to read web metadata for task {task_id}: {e}"
+                        )
+
                 # Create map info
                 map_info = MapInfo(
                     id=task_id,
@@ -105,6 +120,8 @@ async def list_maps() -> MapListResponse:
                     created=datetime.fromisoformat(metadata.get("updated")),
                     thumbnail=f"/api/map/{task_id}/thumbnail.png",
                     description=metadata.get("description"),
+                    width=width,
+                    height=height,
                 )
                 maps.append(map_info)
 
@@ -171,12 +188,43 @@ async def get_map_metadata(map_id: str):
     # Add the map ID to the metadata
     metadata["id"] = map_id
 
+    # Update tile size to 512 as tiles are always 512x512
+    metadata["tileSize"] = 512
+
     # Get the task metadata for additional information
     task_metadata = storage.load_task_metadata(map_id)
     if task_metadata:
+        # Basic map information
         metadata["name"] = task_metadata.get("name", f"Map {map_id[:6]}")
         metadata["created"] = task_metadata.get("updated")
         metadata["description"] = task_metadata.get("description")
+
+        # Add additional metadata from the conversion request
+        if "origin_y" not in metadata and "exportSettings" in task_metadata:
+            metadata["origin_y"] = task_metadata.get("exportSettings", {}).get(
+                "originY", 100
+            )
+
+        # Include dithering algorithm and color palette
+        metadata["dithering_algorithm"] = task_metadata.get("algorithm")
+        metadata["color_palette"] = task_metadata.get("color_palette", "minecraft")
+
+        # Include additional conversion settings that might be useful for the user
+        if "line_visibilities" in task_metadata:
+            metadata["line_visibilities"] = task_metadata.get("line_visibilities")
+
+        if "image_division" in task_metadata:
+            metadata["image_division"] = task_metadata.get("image_division")
+
+        # Include schematic information if available
+        if task_metadata.get("schematicSettings", {}).get("generateSchematic", False):
+            metadata["schematic"] = {
+                "name": task_metadata.get("schematicSettings", {}).get("name"),
+                "author": task_metadata.get("schematicSettings", {}).get("author"),
+                "description": task_metadata.get("schematicSettings", {}).get(
+                    "description"
+                ),
+            }
 
     return metadata
 

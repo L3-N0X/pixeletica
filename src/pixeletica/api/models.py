@@ -311,6 +311,8 @@ class MapInfo(BaseModel):
     created: datetime = Field(..., description="Creation timestamp")
     thumbnail: str = Field(..., description="URL to thumbnail image")
     description: Optional[str] = Field(default=None, description="Map description")
+    width: Optional[int] = Field(default=None, description="Map width in blocks")
+    height: Optional[int] = Field(default=None, description="Map height in blocks")
 
 
 class MapListResponse(BaseModel):
