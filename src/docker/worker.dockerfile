@@ -42,5 +42,5 @@ RUN useradd -m pixeletica \
     && chown -R pixeletica:pixeletica /app
 USER pixeletica
 
-# Command to run the Celery worker
-CMD ["celery", "-A", "pixeletica.api.services.task_queue.celery_app", "worker", "--loglevel=info"]
+# Command to run the Celery worker, explicitly listening to the 'celery' queue
+CMD ["celery", "-A", "pixeletica.api.services.task_queue.celery_app", "worker", "--loglevel=info", "-Q", "celery"]
