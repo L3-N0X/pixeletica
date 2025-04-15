@@ -438,43 +438,64 @@ async def start_conversion(
 
     Returns a task ID for status tracking.
     """
+    # Start tracking time for this request
+    start_time = time.time()
+    request_id = str(uuid.uuid4())[:8]
+    logger.info(f"[REQ-{request_id}] Starting conversion request")
+
     # Parse the metadata JSON
     try:
         metadata_json = json.loads(metadata)
         metadata_model = ConversionJSONMetadata(**metadata_json)
+        logger.info(f"[REQ-{request_id}] Parsed metadata successfully")
     except json.JSONDecodeError:
+        logger.error(f"[REQ-{request_id}] Invalid JSON metadata format")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid JSON metadata format. Must be a valid JSON string.",
         )
     except Exception as e:
+        logger.error(f"[REQ-{request_id}] Error parsing metadata: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error parsing metadata: {str(e)}",
         )
+
     # Check file size
     if image_file.size > MAX_FILE_SIZE:
+        logger.warning(f"[REQ-{request_id}] File too large: {image_file.size} bytes")
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Image size exceeds maximum limit of {MAX_FILE_SIZE / (1024 * 1024)}MB",
+            detail=f"Image size exceeds maximum limit of {MAX_FILE_SIZE / (1024 * 1024):.1f}MB",
         )
 
     # Read image data
-    image_data = await image_file.read()
-    if not image_data:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="No image data provided"
-        )
-
-    # Decode image data
     try:
-        image_data_b64 = base64.b64encode(image_data).decode("utf-8")
-        # Basic check to ensure the decoded data is valid base64
-        base64.b64decode(image_data_b64)
+        image_data = await image_file.read()
+        if not image_data:
+            logger.error(f"[REQ-{request_id}] Empty image file")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="No image data provided"
+            )
+        logger.info(f"[REQ-{request_id}] Read image data: {len(image_data)} bytes")
     except Exception as e:
+        logger.error(f"[REQ-{request_id}] Error reading image file: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid image data: {str(e)}",
+            detail=f"Error reading image file: {str(e)}",
+        )
+
+    # Decode image data to base64
+    try:
+        image_data_b64 = base64.b64encode(image_data).decode("utf-8")
+        logger.info(
+            f"[REQ-{request_id}] Base64-encoded image: {len(image_data_b64)} chars"
+        )
+    except Exception as e:
+        logger.error(f"[REQ-{request_id}] Error encoding image to base64: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error encoding image to base64: {str(e)}",
         )
 
     # Prepare task data dictionary from the metadata model
@@ -484,8 +505,13 @@ async def start_conversion(
     task_data["image"] = image_data_b64
     task_data["filename"] = image_file.filename
 
-    # Ensure enum values are strings for task queue
-    task_data["dithering_algorithm"] = metadata_model.dithering_algorithm.value
+    # Ensure filename is safe
+    if not task_data["filename"] or task_data["filename"] == "":
+        task_data["filename"] = f"image_{request_id}.png"
+
+    # Configure algorithm
+    task_data["algorithm"] = metadata_model.dithering_algorithm.value
+    logger.info(f"[REQ-{request_id}] Using algorithm: {task_data['algorithm']}")
 
     # Convert line visibility options to string values
     task_data["line_visibilities"] = [
@@ -499,11 +525,16 @@ async def start_conversion(
 
     # Set export types with web files always included
     task_data["export_types"] = [EXPORT_TYPE_WEB]
+
     # We always want large exports for different line visibilities
     task_data["export_types"].append(EXPORT_TYPE_LARGE)
+
     # Add split export if requested
     if task_data.get("image_division", 1) > 1:
         task_data["export_types"].append(EXPORT_TYPE_SPLIT)
+        logger.info(
+            f"[REQ-{request_id}] Adding split export (division: {task_data.get('image_division')})"
+        )
 
     # Set version options for the line visibility configuration
     task_data["version_options"] = {
@@ -515,40 +546,87 @@ async def start_conversion(
         "both_lines": LineVisibilityOption.BOTH in metadata_model.line_visibilities,
     }
 
-    # Remove fields not directly needed by the worker task if any,
-    # or map them as required by the task processing logic.
-    # For now, we pass the whole model dump plus image/filename.
+    # Set export settings for schematic
+    task_data["schematicSettings"] = {
+        "generateSchematic": metadata_model.generate_schematic,
+        "name": metadata_model.schematic_name,
+        "author": metadata_model.schematic_author,
+        "description": metadata_model.schematic_description,
+    }
 
-    # Log the task data for debugging purposes
-    logger.info(f"Creating task with the following parameters:")
-    for key, value in task_data.items():
-        if key != "image":  # Skip logging the image data as it's too large
-            logger.info(f"  {key}: {value}")
+    # Set export settings for the renderer
+    task_data["exportSettings"] = {
+        "originX": metadata_model.origin_x,
+        "originY": metadata_model.origin_y,
+        "originZ": metadata_model.origin_z,
+        "chunkLineColor": metadata_model.chunk_line_color,
+        "blockLineColor": metadata_model.block_line_color,
+        "splitCount": metadata_model.image_division,
+    }
 
-    # Create the task
-    try:
-        task_id = task_queue.create_task(task_data)  # Pass the prepared dict
-        logger.info(f"Task created with ID: {task_id}")
-        task_status = task_queue.get_task_status(task_id, bypass_cache=True)
-        logger.info(f"Initial task status: {task_status}")
-    except Exception as e:
-        logger.error(f"Error creating conversion task: {e}", exc_info=True)
+    # Create the task with reliable error handling
+    retry_count = 3
+    task_id = None
+    task_status = None
+
+    for attempt in range(retry_count):
+        try:
+            logger.info(
+                f"[REQ-{request_id}] Creating task (attempt {attempt+1}/{retry_count})"
+            )
+            task_id = task_queue.create_task(task_data)
+
+            if not task_id:
+                logger.error(f"[REQ-{request_id}] create_task returned empty task_id")
+                continue
+
+            logger.info(f"[REQ-{request_id}] Task created with ID: {task_id}")
+
+            # Get initial status - might be None or invalid initially
+            task_status = task_queue.get_task_status(task_id, bypass_cache=True)
+
+            if task_status and "status" in task_status:
+                logger.info(
+                    f"[REQ-{request_id}] Initial task status: {task_status['status']}"
+                )
+                break
+            else:
+                logger.warning(
+                    f"[REQ-{request_id}] Invalid initial task status: {task_status}"
+                )
+                if attempt == retry_count - 1:
+                    raise ValueError("Failed to get initial task status")
+                time.sleep(0.5)  # Short delay before retry
+
+        except Exception as e:
+            logger.error(
+                f"[REQ-{request_id}] Error creating task (attempt {attempt+1}/{retry_count}): {e}",
+                exc_info=True,
+            )
+            if attempt == retry_count - 1:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to create task after {retry_count} attempts: {str(e)}",
+                )
+            time.sleep(0.5)  # Short delay before retry
+
+    # Final verification of task creation
+    if not task_id or not task_status:
+        logger.critical(f"[REQ-{request_id}] Failed to create or verify task")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating conversion task: {str(e)}",
+            detail="Failed to create or verify task status",
         )
 
-    if not task_status:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create conversion task",
-        )
+    # Record the time taken
+    elapsed = time.time() - start_time
+    logger.info(f"[REQ-{request_id}] Task creation completed in {elapsed:.2f}s")
 
     return TaskResponse(
         taskId=task_id,
         status=task_status["status"],
-        progress=task_status.get("progress"),
-        timestamp=task_status.get("updated"),
+        progress=task_status.get("progress", 0),
+        timestamp=task_status.get("updated", datetime.now().isoformat()),
         error=task_status.get("error"),
     )
 
@@ -611,130 +689,83 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
 
     Returns the current status, progress, and any error information.
     """
-    # Log the status request
-    logger.info(f"Getting status for task {task_id}")
+    # Generate request ID for tracking
+    request_id = str(uuid.uuid4())[:8]
+    logger.info(f"[REQ-{request_id}] Getting status for task {task_id}")
 
-    # Always bypass cache to get the most recent status
-    task_status = task_queue.get_task_status(task_id, bypass_cache=True)
+    # Always bypass cache to get the most recent status with extra reliability
+    try:
+        # First try - standard task status
+        task_status = task_queue.get_task_status(task_id, bypass_cache=True)
 
-    if not task_status:
-        logger.warning(f"Task {task_id} not found")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"Task not found: {task_id}"
-        )
+        if not task_status:
+            logger.warning(f"[REQ-{request_id}] Task {task_id} not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Task not found: {task_id}",
+            )
 
-    # Enhanced debugging: check if the task is stuck in QUEUED status for too long
-    if task_status.get("status") == "queued":
-        try:
-            created_time = datetime.fromisoformat(task_status.get("created", ""))
-            now = datetime.now()
-            queue_time = (now - created_time).total_seconds()
+        # Get Celery task ID if available
+        celery_id = task_status.get("celery_id") or task_status.get("celery_task_id")
+        if celery_id:
+            logger.info(f"[REQ-{request_id}] Found Celery task ID: {celery_id}")
 
-            if queue_time > 60:  # More than 1 minute
-                logger.warning(
-                    f"Task {task_id} has been queued for {queue_time:.2f} seconds, may be stuck"
+        # Check Celery task status directly if needed
+        if celery_id:
+            try:
+                from celery.result import AsyncResult
+                from celery import states
+
+                result = AsyncResult(celery_id, app=task_queue.celery_app)
+                celery_state = result.state
+                logger.info(
+                    f"[REQ-{request_id}] Celery task {celery_id} state: {celery_state}"
                 )
 
-                # Try to get details from Redis about the celery task
-                try:
-                    import redis
-                    import os
-                    import json
-
-                    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-                    r = redis.Redis.from_url(redis_url)
-
-                    # Check if there's a celery_task_id in the metadata
-                    celery_task_id = task_status.get("celery_task_id")
-                    if celery_task_id:
-                        logger.info(
-                            f"Looking for celery task {celery_task_id} in Redis"
-                        )
-                        task_key = f"celery-task-meta-{celery_task_id}"
-                        if r.exists(task_key):
-                            task_data = r.get(task_key)
-                            logger.info(f"Celery task data: {task_data}")
-                        else:
-                            logger.warning(
-                                f"Celery task {celery_task_id} not found in Redis"
-                            )
-
-                            # Check queue status
-                            queue_key = "celery"
-                            queue_length = r.llen(queue_key)
-                            logger.info(f"Celery queue length: {queue_length}")
-
-                    else:
-                        logger.warning(
-                            f"No celery_task_id found in metadata for task {task_id}"
-                        )
-
-                except Exception as e:
-                    logger.error(f"Failed to check Redis for task status: {e}")
-
-                # If task has been queued for more than 5 minutes, try to restart it
-                if queue_time > 300:  # 5 minutes
+                # If there's a state mismatch, log it
+                if (
+                    celery_state == states.SUCCESS
+                    and task_status.get("status") != TaskStatus.COMPLETED.value
+                ):
                     logger.warning(
-                        f"Task {task_id} appears to be stuck in queue for {queue_time:.2f} seconds, attempting to restart"
+                        f"[REQ-{request_id}] State mismatch: Celery SUCCESS but task status {task_status.get('status')}"
                     )
-                    try:
-                        # Reload the task data from storage
-                        from src.pixeletica.api.services import storage
+                elif (
+                    celery_state == states.FAILURE
+                    and task_status.get("status") != TaskStatus.FAILED.value
+                ):
+                    logger.warning(
+                        f"[REQ-{request_id}] State mismatch: Celery FAILURE but task status {task_status.get('status')}"
+                    )
 
-                        metadata = storage.load_task_metadata(
-                            task_id, bypass_cache=True
-                        )
+            except Exception as e:
+                logger.error(f"[REQ-{request_id}] Error checking Celery task: {e}")
 
-                        if metadata and "config" in metadata:
-                            # Extract necessary info to rebuild the request data
-                            config = metadata["config"]
-                            request_data = {
-                                "filename": config.get("filename", "image.png"),
-                                "width": config.get("width"),
-                                "height": config.get("height"),
-                                "algorithm": config.get("algorithm", "floyd_steinberg"),
-                                "exportSettings": config.get("exportSettings", {}),
-                                "schematicSettings": config.get(
-                                    "schematicSettings", {}
-                                ),
-                            }
+        # Log the task status details
+        logger.info(
+            f"[REQ-{request_id}] Task {task_id} status: {task_status.get('status')}, progress: {task_status.get('progress')}"
+        )
 
-                            # Get input image path if available
-                            input_image_path = metadata.get("inputImagePath")
-                            if input_image_path:
-                                # Update status to reprocessing
-                                task_queue.update_task_status(
-                                    task_id,
-                                    "processing",
-                                    progress=1,
-                                    error="Auto-restarting stuck task",
-                                )
+        # Return the response based on the task status
+        return TaskResponse(
+            taskId=task_id,
+            status=task_status["status"],
+            progress=task_status.get("progress", 0),
+            timestamp=task_status.get("updated", datetime.now().isoformat()),
+            error=task_status.get("error"),
+        )
 
-                                # The task will stay in processing status, but at least it's not stuck in "queued" anymore
-                                logger.info(
-                                    f"Updated task {task_id} status to processing to indicate attention needed"
-                                )
-                    except Exception as restart_error:
-                        logger.error(
-                            f"Failed to attempt restart of stuck task {task_id}: {restart_error}"
-                        )
-        except Exception as e:
-            logger.error(f"Error checking if task is stuck: {e}")
-
-    # Log the task status details
-    logger.info(
-        f"Task {task_id} status: {task_status.get('status')}, progress: {task_status.get('progress')}"
-    )
-
-    response = TaskResponse(
-        taskId=task_id,
-        status=task_status["status"],
-        progress=task_status.get("progress"),
-        timestamp=task_status.get("updated"),
-        error=task_status.get("error"),
-    )
-
-    return response
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(
+            f"[REQ-{request_id}] Error getting task status: {e}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving task status: {str(e)}",
+        )
 
 
 @router.get(

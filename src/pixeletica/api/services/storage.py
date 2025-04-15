@@ -6,6 +6,7 @@ This module handles:
 - Saving uploaded images
 - Managing output files
 - Providing file information
+- Reliable metadata storage and retrieval
 """
 
 import base64
@@ -18,7 +19,7 @@ import uuid
 from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Any
 
 from PIL import Image
 
@@ -56,9 +57,50 @@ def ensure_task_directory(task_id: str) -> Path:
     return task_dir
 
 
+def clear_metadata_cache(task_id: str = None):
+    """
+    Clear the metadata cache for a specific task or all tasks.
+
+    Args:
+        task_id: Task identifier (if None, clears all cached metadata)
+    """
+    if task_id is None:
+        # Clear all cached metadata
+        load_task_metadata.cache_clear()
+        logger.info("Cleared entire task metadata cache")
+    else:
+        # Try to clear just this entry (this may clear the entire cache due to LRU implementation)
+        load_task_metadata.cache_clear()
+        logger.info(f"Cleared metadata cache for task {task_id}")
+
+    # Additionally try to clear Redis cache if applicable
+    try:
+        import redis
+        import os
+
+        redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+        r = redis.Redis.from_url(redis_url)
+
+        # Clear any keys related to this task if task_id is provided
+        if task_id:
+            task_key_pattern = f"*{task_id}*"
+            keys = r.keys(task_key_pattern)
+            if keys:
+                r.delete(*keys)
+                logger.info(f"Cleared {len(keys)} Redis keys for task {task_id}")
+        # Otherwise clear only the cache keys, not task state keys
+        else:
+            cache_keys = r.keys("*_cache_*")
+            if cache_keys:
+                r.delete(*cache_keys)
+                logger.info(f"Cleared {len(cache_keys)} Redis cache keys")
+    except Exception as e:
+        logger.error(f"Error clearing Redis cache: {e}")
+
+
 def save_task_metadata(task_id: str, metadata: Dict, force: bool = False) -> Path:
     """
-    Save task metadata to a JSON file.
+    Save task metadata to a JSON file with high reliability.
 
     Args:
         task_id: Task identifier
@@ -73,6 +115,10 @@ def save_task_metadata(task_id: str, metadata: Dict, force: bool = False) -> Pat
 
     # Update timestamp
     metadata["updated"] = datetime.now().isoformat()
+
+    # Ensure taskId is set correctly
+    if "taskId" not in metadata:
+        metadata["taskId"] = task_id
 
     retry_count = 3
     for attempt in range(retry_count):
@@ -90,8 +136,22 @@ def save_task_metadata(task_id: str, metadata: Dict, force: bool = False) -> Pat
 
             # Clear the cache if requested
             if force:
-                load_task_metadata.cache_clear()
-                logger.info(f"Forced cache clear for task {task_id} metadata")
+                clear_metadata_cache(task_id)
+
+            # Verify the file was written correctly by reading it back
+            try:
+                with open(metadata_file, "r") as f:
+                    verification_data = json.load(f)
+                    if verification_data.get("status") == metadata.get("status"):
+                        logger.info(
+                            f"Verified metadata status: {metadata.get('status')}"
+                        )
+                    else:
+                        logger.warning(
+                            f"Metadata verification failed: {verification_data.get('status')} != {metadata.get('status')}"
+                        )
+            except Exception as e:
+                logger.warning(f"Failed to verify metadata after save: {e}")
 
             return metadata_file
         except Exception as e:
@@ -108,40 +168,6 @@ def save_task_metadata(task_id: str, metadata: Dict, force: bool = False) -> Pat
             time.sleep(0.5)  # Short delay before retry
 
 
-def clear_metadata_cache(task_id: str):
-    """
-    Clear the metadata cache for a specific task.
-
-    Args:
-        task_id: Task identifier
-    """
-
-    # Create a new function to clear cache
-    def clear_cache():
-        load_task_metadata.cache_clear()
-        logger.info(f"Cache cleared for task {task_id} metadata")
-
-    # Clear the cache
-    clear_cache()
-
-    # Additionally try to clear Redis cache if applicable
-    try:
-        import redis
-        import os
-
-        redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-        r = redis.Redis.from_url(redis_url)
-
-        # Clear any keys related to this task
-        task_key_pattern = f"*{task_id}*"
-        keys = r.keys(task_key_pattern)
-        if keys:
-            r.delete(*keys)
-            logger.info(f"Cleared {len(keys)} Redis keys for task {task_id}")
-    except Exception as e:
-        logger.error(f"Error clearing Redis cache for task {task_id}: {e}")
-
-
 @lru_cache(maxsize=128)
 def load_task_metadata(task_id: str, bypass_cache: bool = False) -> Optional[Dict]:
     """
@@ -149,7 +175,7 @@ def load_task_metadata(task_id: str, bypass_cache: bool = False) -> Optional[Dic
 
     Args:
         task_id: Task identifier
-        bypass_cache: If True, bypass the cache and load from disk
+        bypass_cache: If True, bypass the cache and load directly from disk
 
     Returns:
         Dictionary containing metadata or None if file doesn't exist
@@ -168,6 +194,11 @@ def load_task_metadata(task_id: str, bypass_cache: bool = False) -> Optional[Dic
         try:
             with open(metadata_file, "r") as f:
                 data = json.load(f)
+
+                # Ensure taskId is set correctly
+                if "taskId" not in data:
+                    data["taskId"] = task_id
+
                 return data
         except json.JSONDecodeError as e:
             logger.error(
@@ -205,12 +236,18 @@ def save_base64_image(task_id: str, image_data: str, filename: str) -> Path:
         image_data = image_data.split(",", 1)[1]
 
     # Decode base64 data
-    image_bytes = base64.b64decode(image_data)
+    try:
+        image_bytes = base64.b64decode(image_data)
+    except Exception as e:
+        logger.error(f"Failed to decode base64 image for task {task_id}: {e}")
+        raise ValueError(f"Invalid base64 image data: {str(e)}")
 
     # Save the image to the input directory
     image_path = task_dir / "input" / filename
     with open(image_path, "wb") as f:
         f.write(image_bytes)
+
+    logger.info(f"Saved image for task {task_id} to {image_path}")
 
     return image_path
 
@@ -233,7 +270,7 @@ def save_output_file(
     task_dir = ensure_task_directory(task_id)
 
     # Determine the appropriate subdirectory
-    if category not in ["dithered", "rendered", "schematic", "web", "input"]:
+    if category not in ["dithered", "rendered", "schematic", "web", "input", "output"]:
         category = "output"  # Default category
 
     output_dir = task_dir / category
@@ -242,11 +279,15 @@ def save_output_file(
     file_path = output_dir / filename
 
     # Save the file based on its type
-    if isinstance(file_data, Image.Image):
-        file_data.save(file_path)
-    else:
-        with open(file_path, "wb") as f:
-            f.write(file_data)
+    try:
+        if isinstance(file_data, Image.Image):
+            file_data.save(file_path)
+        else:
+            with open(file_path, "wb") as f:
+                f.write(file_data)
+    except Exception as e:
+        logger.error(f"Failed to save output file {filename} for task {task_id}: {e}")
+        raise
 
     # Generate file info
     file_size = file_path.stat().st_size
@@ -254,7 +295,8 @@ def save_output_file(
     if not mime_type:
         mime_type = "application/octet-stream"
 
-    file_id = str(uuid.uuid4())[:8]  # Short UUID for file ID
+    # Create a stable file ID that can be consistently referenced
+    file_id = f"{category}_{filename}"
 
     return {
         "fileId": file_id,
@@ -263,27 +305,30 @@ def save_output_file(
         "type": mime_type,
         "size": file_size,
         "category": category,
+        "url": f"/api/conversion/{task_id}/files/{file_id}",
     }
 
 
-@lru_cache(maxsize=128)
-def list_task_files(task_id: str) -> List[Dict]:
+def list_task_files(task_id: str, bypass_cache: bool = False) -> List[Dict]:
     """
     List all files associated with a task.
 
     Args:
         task_id: Task identifier
+        bypass_cache: If True, bypass the cache
 
     Returns:
         List of file info dictionaries
     """
+    if bypass_cache:
+        list_task_files.cache_clear()
+
     task_dir = TASKS_DIR / task_id
 
     if not task_dir.exists():
         return []
 
     files = []
-    file_id_counter = 1
 
     # Walk through the task directory and find all files
     for root, _, filenames in os.walk(task_dir):
@@ -299,11 +344,11 @@ def list_task_files(task_id: str) -> List[Dict]:
             continue
 
         for filename in filenames:
-            file_path = root_path / filename
-
-            # Skip hidden files
-            if filename.startswith("."):
+            # Skip hidden files and temporary files
+            if filename.startswith(".") or filename.endswith(".tmp"):
                 continue
+
+            file_path = root_path / filename
 
             mime_type, _ = mimetypes.guess_type(filename)
             if not mime_type:
@@ -311,23 +356,28 @@ def list_task_files(task_id: str) -> List[Dict]:
 
             file_size = file_path.stat().st_size
 
+            # Create a stable file ID that can be consistently referenced
+            file_id = f"{category}_{filename}"
+
             files.append(
                 {
-                    "fileId": str(file_id_counter),  # Simple incremental ID
+                    "fileId": file_id,
                     "filename": filename,
                     "path": str(file_path),
                     "type": mime_type,
                     "size": file_size,
                     "category": category,
+                    "url": f"/api/conversion/{task_id}/files/{file_id}",
                 }
             )
-
-            file_id_counter += 1
 
     return files
 
 
-@lru_cache(maxsize=128)
+# Cache list_task_files for performance
+list_task_files = lru_cache(maxsize=64)(list_task_files)
+
+
 def get_file_path(task_id: str, file_id: str) -> Optional[Path]:
     """
     Get the file path for a specific file ID.
@@ -339,8 +389,18 @@ def get_file_path(task_id: str, file_id: str) -> Optional[Path]:
     Returns:
         Path to the file or None if not found
     """
-    files = list_task_files(task_id)
+    # First try to parse the file_id format we generate (category_filename)
+    if "_" in file_id:
+        try:
+            category, filename = file_id.split("_", 1)
+            file_path = TASKS_DIR / task_id / category / filename
+            if file_path.exists():
+                return file_path
+        except Exception:
+            pass
 
+    # Fall back to scanning all files
+    files = list_task_files(task_id)
     for file_info in files:
         if file_info["fileId"] == file_id:
             return Path(file_info["path"])
@@ -413,8 +473,8 @@ def create_zip_archive(
     if not task_dir.exists():
         return None
 
-    # Get list of files
-    all_files = list_task_files(task_id)
+    # Get list of files (bypass cache to ensure we get latest files)
+    all_files = list_task_files(task_id, bypass_cache=True)
 
     # Filter files if file_ids is provided
     if file_ids:
@@ -430,27 +490,38 @@ def create_zip_archive(
         zip_path = Path(tmp_file.name)
 
     # Create ZIP archive
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
-        # Group files by category
-        files_by_category = {}
-        for file_info in files_to_include:
-            category = file_info["category"]
-            if category not in files_by_category:
-                files_by_category[category] = []
-            files_by_category[category].append(file_info)
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            # Group files by category
+            files_by_category = {}
+            for file_info in files_to_include:
+                category = file_info["category"]
+                if category not in files_by_category:
+                    files_by_category[category] = []
+                files_by_category[category].append(file_info)
 
-        # Add files to ZIP with category-based directory structure
-        for category, files in files_by_category.items():
-            for file_info in files:
-                file_path = Path(file_info["path"])
-                if file_path.exists():
-                    # Use category as subdirectory in ZIP
-                    archive_path = f"{category}/{file_info['filename']}"
-                    zip_file.write(file_path, arcname=archive_path)
+            # Add files to ZIP with category-based directory structure
+            for category, files in files_by_category.items():
+                for file_info in files:
+                    file_path = Path(file_info["path"])
+                    if file_path.exists():
+                        # Use category as subdirectory in ZIP
+                        archive_path = f"{category}/{file_info['filename']}"
+                        zip_file.write(file_path, arcname=archive_path)
+    except Exception as e:
+        logger.error(f"Failed to create ZIP archive for task {task_id}: {e}")
+        if zip_path.exists():
+            zip_path.unlink()
+        return None
 
     # Move ZIP to task directory
-    zip_filename = f"pixeletica_task_{task_id}.zip"
-    final_zip_path = task_dir / zip_filename
-    shutil.move(zip_path, final_zip_path)
-
-    return final_zip_path
+    try:
+        zip_filename = f"pixeletica_task_{task_id}.zip"
+        final_zip_path = task_dir / zip_filename
+        shutil.move(zip_path, final_zip_path)
+        return final_zip_path
+    except Exception as e:
+        logger.error(f"Failed to move ZIP archive to task directory: {e}")
+        if zip_path.exists():
+            zip_path.unlink()
+        return None
