@@ -945,7 +945,12 @@ async def list_files(
     # Group files by category
     categories = {}
     for file in files:
-        file_category = file.get("category", "other")
+        file_category = file.get("category")
+        if not file_category or file_category not in [e.value for e in file_category]:
+            logger.error(
+                f"Invalid file category: {file_category}. Using default category 'dithered'."
+            )
+            file_category = file_category.DITHERED.value
         if file_category not in categories:
             categories[file_category] = []
         categories[file_category].append(file)
