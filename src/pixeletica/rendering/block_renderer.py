@@ -6,9 +6,15 @@ rather than solid colors from a color palette.
 """
 
 import numpy as np
+import hashlib
+import logging
+import os
 from PIL import Image
 
 from src.pixeletica.rendering.texture_loader import TextureManager
+
+# Set up logging
+logger = logging.getLogger("pixeletica.rendering.block_renderer")
 
 
 class BlockRenderer:
@@ -42,17 +48,30 @@ class BlockRenderer:
 
         # If no top texture is available, try side texture
         if texture is None:
+            logger.debug(f"No top texture for {block_id}, trying side texture")
             texture = self.texture_manager.get_texture(block_id, face="side")
 
         # If still no texture, try any face
         if texture is None:
+            logger.debug(f"No side texture for {block_id}, trying default texture")
             texture = self.texture_manager.get_texture(block_id)
+
+        # Try with a simplified block ID (remove namespace if present)
+        if texture is None and ":" in block_id:
+            simple_block_id = block_id.split(":")[-1]
+            logger.debug(f"Trying simplified block ID: {simple_block_id}")
+            texture = self.texture_manager.get_texture(simple_block_id, face="top")
+            if texture is None:
+                texture = self.texture_manager.get_texture(simple_block_id, face="side")
+            if texture is None:
+                texture = self.texture_manager.get_texture(simple_block_id)
 
         # If no texture is found, create a colored placeholder based on the block ID
         if texture is None:
+            logger.warning(
+                f"No texture found for block {block_id}, using fallback color"
+            )
             # Hash the block ID to get a somewhat consistent color
-            import hashlib
-
             hash_val = int(hashlib.md5(block_id.encode()).hexdigest(), 16)
             r = (hash_val & 0xFF0000) >> 16
             g = (hash_val & 0x00FF00) >> 8
@@ -127,5 +146,13 @@ def render_blocks_from_block_ids(block_ids, scale=1, texture_manager=None):
     Returns:
         PIL Image of the rendered blocks
     """
+    # Create a texture manager with absolute path to ensure correct texture loading
+    if texture_manager is None:
+        from src.pixeletica.rendering.texture_loader import DEFAULT_TEXTURE_PATH
+
+        texture_path = os.path.abspath(DEFAULT_TEXTURE_PATH)
+        logger.info(f"Creating new TextureManager with path: {texture_path}")
+        texture_manager = TextureManager(texture_path)
+
     renderer = BlockRenderer(texture_manager)
     return renderer.render_block_array(block_ids, scale)

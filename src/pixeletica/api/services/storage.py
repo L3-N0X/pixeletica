@@ -50,8 +50,15 @@ def ensure_task_directory(task_id: str) -> Path:
     (task_dir / "input").mkdir(exist_ok=True)
     (task_dir / "dithered").mkdir(exist_ok=True)
     (task_dir / "rendered").mkdir(exist_ok=True)
+    # Create rendered subdirectories for different line types
+    (task_dir / "rendered" / "no_lines").mkdir(parents=True, exist_ok=True)
+    (task_dir / "rendered" / "block_lines").mkdir(parents=True, exist_ok=True)
+    (task_dir / "rendered" / "chunk_lines").mkdir(parents=True, exist_ok=True)
+    (task_dir / "rendered" / "both_lines").mkdir(parents=True, exist_ok=True)
     (task_dir / "schematic").mkdir(exist_ok=True)
     (task_dir / "web").mkdir(exist_ok=True)
+    # Create tiles directory in web for the simplified structure
+    (task_dir / "web" / "tiles").mkdir(parents=True, exist_ok=True)
     (task_dir / "metadata").mkdir(exist_ok=True)
 
     return task_dir
@@ -436,6 +443,10 @@ def list_task_files(task_id: str, bypass_cache: bool = False) -> List[Dict]:
             if filename.startswith(".") or filename.endswith(".tmp"):
                 continue
 
+            # Skip the generated ZIP files used for downloads to avoid duplicates in the listing
+            if filename == f"pixeletica_task_{task_id}.zip":
+                continue
+
             file_path = root_path / filename
 
             mime_type, _ = mimetypes.guess_type(filename)
@@ -602,11 +613,14 @@ def create_zip_archive(
             zip_path.unlink()
         return None
 
-    # Move ZIP to task directory
+    # Move ZIP to the root of the task directory
     try:
         zip_filename = f"pixeletica_task_{task_id}.zip"
         final_zip_path = task_dir / zip_filename
         shutil.move(zip_path, final_zip_path)
+
+        # Log that the ZIP is now in the root directory
+        logger.info(f"Created ZIP archive at {final_zip_path} (root of task dir)")
         return final_zip_path
     except Exception as e:
         logger.error(f"Failed to move ZIP archive to task directory: {e}")

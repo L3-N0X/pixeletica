@@ -85,8 +85,8 @@ class ExportManager:
             else f"{base_name}_{timestamp}"
         )
 
-        # Create export directory
-        export_dir = os.path.join(self.base_export_dir, export_name)
+        # Create export directory - directly in the output_dir rather than in exports/
+        export_dir = os.path.join(self.output_dir, export_name)
         os.makedirs(export_dir, exist_ok=True)
 
         # Export in the specified formats
@@ -106,11 +106,14 @@ class ExportManager:
         # Export each requested format
         for export_type in export_types:
             if export_type == EXPORT_TYPE_WEB:
-                # Web exports (tile-based for web viewer)
+                # Web exports (simplified structure with only tiles and metadata)
                 from src.pixeletica.export.web_export import export_web_tiles
 
                 # Web exports never have lines
-                web_dir = os.path.join(export_dir, f"web_{base_name}")
+                web_dir = os.path.join(export_dir, "web")
+                os.makedirs(web_dir, exist_ok=True)
+
+                # Export tiles using the simplified structure
                 web_result = export_web_tiles(
                     image,
                     web_dir,
@@ -121,78 +124,139 @@ class ExportManager:
                 results["exports"]["web"] = web_result
 
             elif export_type == EXPORT_TYPE_LARGE:
-                # Large single image
-                large_dir = os.path.join(export_dir, "large")
-                os.makedirs(large_dir, exist_ok=True)
+                # Large single image - organized by line type
+                rendered_dir = os.path.join(export_dir, "rendered")
+                os.makedirs(rendered_dir, exist_ok=True)
 
                 # Export versions with and without lines
                 large_results = {}
 
-                if include_no_lines_version:
-                    # Export without lines
-                    no_lines_path = os.path.join(large_dir, f"{base_name}_no_lines.png")
-                    image.save(no_lines_path)
-                    large_results["no_lines"] = no_lines_path
+                # Determine the appropriate subfolder based on line settings
+                folder_name = None
+                if include_no_lines_version and not include_lines_version:
+                    folder_name = "no_lines"
+                elif include_lines_version:
+                    if draw_chunk_lines and draw_block_lines:
+                        folder_name = "both_lines"
+                    elif draw_chunk_lines:
+                        folder_name = "chunk_lines"
+                    elif draw_block_lines:
+                        folder_name = "block_lines"
+                    else:
+                        folder_name = "no_lines"
 
-                if include_lines_version:
-                    # Export with lines
-                    with_lines_image = apply_lines_to_image(
-                        image,
-                        draw_chunk_lines=draw_chunk_lines,
-                        chunk_line_color=chunk_line_color,
-                        draw_block_lines=draw_block_lines,
-                        block_line_color=block_line_color,
-                        origin_x=origin_x,
-                        origin_z=origin_z,
-                    )
-                    with_lines_path = os.path.join(
-                        large_dir, f"{base_name}_with_lines.png"
-                    )
-                    with_lines_image.save(with_lines_path)
-                    large_results["with_lines"] = with_lines_path
+                if folder_name:
+                    # Create the appropriate subfolder
+                    line_type_dir = os.path.join(rendered_dir, folder_name)
+                    os.makedirs(line_type_dir, exist_ok=True)
+
+                    if include_no_lines_version and folder_name == "no_lines":
+                        # Export without lines
+                        file_path = os.path.join(line_type_dir, f"{base_name}.png")
+                        image.save(file_path)
+                        large_results["no_lines"] = file_path
+
+                    if include_lines_version and folder_name != "no_lines":
+                        # Apply appropriate lines based on folder name
+                        apply_chunk_lines = folder_name in ["chunk_lines", "both_lines"]
+                        apply_block_lines = folder_name in ["block_lines", "both_lines"]
+
+                        with_lines_image = apply_lines_to_image(
+                            image,
+                            draw_chunk_lines=apply_chunk_lines,
+                            chunk_line_color=chunk_line_color,
+                            draw_block_lines=apply_block_lines,
+                            block_line_color=block_line_color,
+                            origin_x=origin_x,
+                            origin_z=origin_z,
+                        )
+                        file_path = os.path.join(line_type_dir, f"{base_name}.png")
+                        with_lines_image.save(file_path)
+                        large_results[folder_name] = file_path
 
                 results["exports"]["large"] = large_results
 
             elif export_type == EXPORT_TYPE_SPLIT:
-                # Split into N equal parts
+                # Split into N equal parts - organize by line type subfolder
                 from src.pixeletica.export.image_splitter import split_image
 
-                split_dir = os.path.join(export_dir, f"split_{split_count}")
-                os.makedirs(split_dir, exist_ok=True)
-
-                # Also create a rendered subdirectory for split images with textures
-                rendered_split_dir = os.path.join(
-                    export_dir, "rendered", f"split_{split_count}"
+                # Create a properly configured texture manager for consistent rendering
+                from src.pixeletica.rendering.texture_loader import (
+                    TextureManager,
+                    DEFAULT_TEXTURE_PATH,
                 )
-                os.makedirs(rendered_split_dir, exist_ok=True)
+                import logging
+
+                logger = logging.getLogger("pixeletica.export.export_manager")
+                texture_path = os.path.abspath(DEFAULT_TEXTURE_PATH)
+                logger.info(
+                    f"Creating TextureManager with absolute path: {texture_path}"
+                )
+                texture_manager = TextureManager(texture_path)
+
+                # Create main rendered directory
+                rendered_dir = os.path.join(export_dir, "rendered")
+                os.makedirs(rendered_dir, exist_ok=True)
 
                 split_results = {}
 
-                if include_no_lines_version:
-                    # Split without lines
-                    no_lines_paths = split_image(
-                        image, rendered_split_dir, f"{base_name}_no_lines", split_count
-                    )
-                    split_results["no_lines"] = no_lines_paths
+                # Determine line type subfolder based on settings (similar to LARGE export)
+                folder_name = None
+                if include_no_lines_version and not include_lines_version:
+                    folder_name = "no_lines"
+                elif include_lines_version:
+                    if draw_chunk_lines and draw_block_lines:
+                        folder_name = "both_lines"
+                    elif draw_chunk_lines:
+                        folder_name = "chunk_lines"
+                    elif draw_block_lines:
+                        folder_name = "block_lines"
+                    else:
+                        folder_name = "no_lines"
 
-                if include_lines_version:
-                    # Split with lines
-                    with_lines_image = apply_lines_to_image(
-                        image,
-                        draw_chunk_lines=draw_chunk_lines,
-                        chunk_line_color=chunk_line_color,
-                        draw_block_lines=draw_block_lines,
-                        block_line_color=block_line_color,
-                        origin_x=origin_x,
-                        origin_z=origin_z,
-                    )
-                    with_lines_paths = split_image(
-                        with_lines_image,
-                        rendered_split_dir,
-                        f"{base_name}_with_lines",
-                        split_count,
-                    )
-                    split_results["with_lines"] = with_lines_paths
+                if folder_name:
+                    # Create the appropriate subfolder
+                    line_type_dir = os.path.join(rendered_dir, folder_name)
+                    os.makedirs(line_type_dir, exist_ok=True)
+
+                    if include_no_lines_version and folder_name == "no_lines":
+                        # Split without lines
+                        no_lines_paths = split_image(
+                            image,
+                            line_type_dir,
+                            base_name,
+                            split_count,
+                            texture_manager=texture_manager,
+                            use_simplified_naming=True,
+                        )
+                        split_results["no_lines"] = no_lines_paths
+
+                    if include_lines_version and folder_name != "no_lines":
+                        # Apply appropriate lines based on folder name
+                        apply_chunk_lines = folder_name in ["chunk_lines", "both_lines"]
+                        apply_block_lines = folder_name in ["block_lines", "both_lines"]
+
+                        # Apply lines to the image
+                        with_lines_image = apply_lines_to_image(
+                            image,
+                            draw_chunk_lines=apply_chunk_lines,
+                            chunk_line_color=chunk_line_color,
+                            draw_block_lines=apply_block_lines,
+                            block_line_color=block_line_color,
+                            origin_x=origin_x,
+                            origin_z=origin_z,
+                        )
+
+                        # Split the image with lines
+                        with_lines_paths = split_image(
+                            with_lines_image,
+                            line_type_dir,
+                            base_name,
+                            split_count,
+                            texture_manager=texture_manager,
+                            use_simplified_naming=True,
+                        )
+                        split_results[folder_name] = with_lines_paths
 
                 results["exports"]["split"] = split_results
 

@@ -9,7 +9,14 @@ import math
 from PIL import Image
 
 
-def split_image(image, output_dir, base_name, split_count=4):
+def split_image(
+    image,
+    output_dir,
+    base_name,
+    split_count=4,
+    texture_manager=None,
+    use_simplified_naming=False,
+):
     """
     Split an image into a specified number of equal parts.
 
@@ -18,10 +25,19 @@ def split_image(image, output_dir, base_name, split_count=4):
         output_dir: Directory to output the split parts
         base_name: Base name for the output files
         split_count: Number of parts to split the image into (default: 4)
+        texture_manager: Optional TextureManager instance for consistent texture rendering
+        use_simplified_naming: Use simpler naming scheme (_1, _2 instead of _part1_of_N)
 
     Returns:
         List of paths to the split image files
     """
+    import logging
+
+    logger = logging.getLogger("pixeletica.export.image_splitter")
+
+    # Log if texture manager was provided
+    if texture_manager:
+        logger.info(f"Using provided texture manager for image splitting")
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
 
@@ -55,10 +71,16 @@ def split_image(image, output_dir, base_name, split_count=4):
             # Crop the part from the main image
             part = image.crop((left, top, right, bottom))
 
-            # Save the part
-            output_path = os.path.join(
-                output_dir, f"{base_name}_part{part_number}_of_{split_count}.png"
-            )
+            # Save the part with appropriate naming scheme
+            if use_simplified_naming:
+                # Use simplified naming: base_name_1.png, base_name_2.png, etc.
+                output_path = os.path.join(output_dir, f"{base_name}_{part_number}.png")
+            else:
+                # Use original naming: base_name_part1_of_4.png
+                output_path = os.path.join(
+                    output_dir, f"{base_name}_part{part_number}_of_{split_count}.png"
+                )
+
             part.save(output_path)
             output_paths.append(output_path)
 

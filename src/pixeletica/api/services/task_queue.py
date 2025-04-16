@@ -601,7 +601,20 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
         # Render blocks with textures
         update_progress("rendering_blocks", 20)  # Start of rendering
         try:
-            block_image = render_blocks_from_block_ids(block_ids)
+            # Create texture manager with absolute path to ensure consistent loading
+            from src.pixeletica.rendering.texture_loader import (
+                TextureManager,
+                DEFAULT_TEXTURE_PATH,
+            )
+
+            texture_path = os.path.abspath(DEFAULT_TEXTURE_PATH)
+            logger.info(f"Creating TextureManager with absolute path: {texture_path}")
+            texture_manager = TextureManager(texture_path)
+
+            # Render blocks using the configured texture manager
+            block_image = render_blocks_from_block_ids(
+                block_ids, texture_manager=texture_manager
+            )
 
             if block_image:
                 # Save block-rendered image directly
@@ -613,6 +626,14 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                 # Update metadata with rendered image info
                 metadata["renderedImage"] = rendered_file_info
                 storage.save_task_metadata(task_id, metadata)
+
+                logger.info(
+                    f"Successfully rendered block image with textures for task {task_id}"
+                )
+            else:
+                logger.error(
+                    f"Failed to render block image with textures for task {task_id}"
+                )
 
                 # Process export settings
                 update_progress("exporting", 20)  # Start of export settings processing
