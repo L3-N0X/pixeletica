@@ -1,118 +1,141 @@
-version: '3.8'
-
 services:
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ${DOCKER_REGISTRY:-ghcr.io}/${DOCKER_NAMESPACE:-your-username}/pixeletica-api:${TAG:-latest}
-    ports:
-      - "${PIXELETICA_API_PORT:-8000}:8000"
+    image: ghcr.io/l3-n0x/pixeletica-api:latest
+    container_name: pixeletica_api
     environment:
+      # API configuration
       - PIXELETICA_API_HOST=0.0.0.0
       - PIXELETICA_API_PORT=8000
       - REDIS_URL=redis://redis:6379/0
       - WAIT_FOR_REDIS=true
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - MAX_UPLOAD_SIZE=${MAX_UPLOAD_SIZE:-10485760}  # 10MB default
-      - CORS_ORIGINS=${CORS_ORIGINS:-*}
-    volumes:
-      - pixeletica_data:/app/out/api_tasks
+      - LOG_LEVEL=debug
+      - MAX_UPLOAD_SIZE=10485760
+      - CORS_ORIGINS=http://localhost:5000,https://localhost:5000
+    # Uncomment to restart automatically on failure
+    restart: unless-stopped
+
     depends_on:
       - redis
-    restart: unless-stopped
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 15s
+
+    # Uncomment to expose additional ports
+    ports:
+      - "8000:8000"
+
+    networks:
+      - pxl-net
+
+    volumes:
+      # - ./pixeletica:/app/pixeletica
+      - pixeletica_tasks_data:/app/tasks # Use named volume for tasks
+      # - ./pixeletica_output:/app/out
     deploy:
       resources:
         limits:
-          cpus: '${API_CPU_LIMIT:-1}'
-          memory: ${API_MEMORY_LIMIT:-1G}
+          cpus: "1"
+          memory: 1G
         reservations:
-          cpus: '${API_CPU_RESERVATION:-0.25}'
-          memory: ${API_MEMORY_RESERVATION:-256M}
+          cpus: "0.25"
+          memory: 256M
 
   worker:
-    build:
-      context: .
-      dockerfile: src/docker/worker.dockerfile
-    image: ${DOCKER_REGISTRY:-ghcr.io}/${DOCKER_NAMESPACE:-your-username}/pixeletica-worker:${TAG:-latest}
+    image: ghcr.io/l3-n0x/pixeletica-worker:latest
+    container_name: pixeletica_worker
     environment:
+      # Worker configuration
       - REDIS_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
       - WAIT_FOR_REDIS=true
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - CELERY_CONCURRENCY=${CELERY_CONCURRENCY:-2}
-      - CELERY_TASK_TIME_LIMIT=${CELERY_TASK_TIME_LIMIT:-3600}
-      - CELERY_TASK_SOFT_TIME_LIMIT=${CELERY_TASK_SOFT_TIME_LIMIT:-3000}
-    volumes:
-      - pixeletica_data:/app/out/api_tasks
+      - LOG_LEVEL=debug
+
+      # Concurrency settings
+
+      # Task time limits
+      - CELERY_TASK_TIME_LIMIT=300 # 5 minutes
+      - CELERY_TASK_SOFT_TIME_LIMIT=0 # No soft time limit
+      - CELERY_CONCURRENCY=1
+      - CELERY_MAX_TASKS_PER_CHILD=100
     depends_on:
       - redis
-    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "celery", "-A", "pixeletica.api.services.task_queue.celery_app", "inspect", "ping", "-d", "celery@$$(hostname)"]
+      test:
+        [
+          "CMD",
+          "celery",
+          "-A",
+          "pixeletica.api.services.task_queue.celery_app",
+          "inspect",
+          "ping",
+          "-d",
+          "celery@$$(hostname)",
+        ]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: '${WORKER_CPU_LIMIT:-2}'
-          memory: ${WORKER_MEMORY_LIMIT:-2G}
-        reservations:
-          cpus: '${WORKER_CPU_RESERVATION:-0.5}'
-          memory: ${WORKER_MEMORY_RESERVATION:-512M}
-      replicas: ${WORKER_REPLICAS:-1}
-
-  monitor:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ${DOCKER_REGISTRY:-ghcr.io}/${DOCKER_NAMESPACE:-your-username}/pixeletica-monitor:${TAG:-latest}
-    command: python -m src.pixeletica.api.services.task_monitor
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - TASK_MONITOR_INTERVAL=${TASK_MONITOR_INTERVAL:-900}
-      - TASK_MAX_PROCESSING_TIME=${TASK_MAX_PROCESSING_TIME:-3600}
-    volumes:
-      - pixeletica_data:/app/out/api_tasks
-    depends_on:
-      - redis
+    # Uncomment to restart automatically on failure
     restart: unless-stopped
+
+    networks:
+      - pxl-net
+
+    volumes:
+      # - ./pixeletica:/app/pixeletica
+      - pixeletica_tasks_data:/app/tasks # Use named volume for tasks
+      # - ./pixeletica_output:/app/out
     deploy:
       resources:
         limits:
-          cpus: '${MONITOR_CPU_LIMIT:-0.1}'
-          memory: ${MONITOR_MEMORY_LIMIT:-128M}
+          cpus: "2"
+          memory: 2G
         reservations:
-          cpus: '${MONITOR_CPU_RESERVATION:-0.05}'
-          memory: ${MONITOR_MEMORY_RESERVATION:-64M}
+          cpus: "0.5"
+          memory: 512M
+      replicas: 1
+    command:
+      - celery
+      - -A
+      - pixeletica.api.services.task_queue.celery_app
+      - worker
+      - --loglevel=info
+      - --without-mingle
+      - --without-gossip
 
   redis:
+    # Use Alpine for smaller image or full Redis for more features
     image: redis:7-alpine
-    command: redis-server --appendonly yes --maxmemory ${REDIS_MEMORY_LIMIT:-256mb} --maxmemory-policy ${REDIS_MEMORY_POLICY:-volatile-lru}
+    container_name: redis
+    hostname: redis
+
+    # Redis server configuration
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy volatile-lru
+
+    # Uncomment for custom Redis configuration
     volumes:
-      - redis_data:/data
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf
+      - ./redis_data:/data
     restart: unless-stopped
+
+    networks:
+      - pxl-net
+
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
       timeout: 10s
       retries: 5
-    deploy:
-      resources:
-        limits:
-          cpus: '${REDIS_CPU_LIMIT:-0.5}'
-          memory: ${REDIS_MEMORY_LIMIT:-256M}
 
-volumes:
-  pixeletica_data:
-    name: ${PIXELETICA_DATA_VOLUME:-pixeletica_data}
-  redis_data:
-    name: ${REDIS_DATA_VOLUME:-pixeletica_redis_data}
+volumes: # Define named volumes
+  pixeletica_tasks_data:
+  redis_data: # Assuming you might want redis data persisted too, keeping from example
+
+networks:
+  pxl-net:
+    driver: bridge

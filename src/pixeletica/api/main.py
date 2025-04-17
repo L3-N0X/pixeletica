@@ -5,12 +5,13 @@ This module sets up the FastAPI application, includes routes,
 and handles CORS, documentation, and middleware.
 """
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_limiter import FastAPILimiter
 import redis.asyncio as redis
-from typing import Dict, Any
+from typing import Dict, Any, AsyncGenerator
 from fastapi.openapi.docs import get_swagger_ui_html
 from src.pixeletica.api.routes import conversion, maps
 from src.pixeletica.api.config import MAX_FILE_SIZE  # Import from config
@@ -27,10 +28,34 @@ logging.basicConfig(
 )
 logger = logging.getLogger("pixeletica.api")
 
-# Create FastAPI app
+
+# Define lifespan context manager for startup/shutdown events
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    # Startup logic: Initialize rate limiter
+    logger.info("Initializing Pixeletica API resources...")
+    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+    try:
+        redis_instance = redis.from_url(redis_url)
+        await FastAPILimiter.init(redis_instance)
+        logger.info("Redis connection established for rate limiting")
+    except Exception as e:
+        logger.error(f"Failed to connect to Redis: {e}")
+        # Depending on requirements, you might want to raise the exception
+        # or handle it differently to prevent the app from starting without Redis.
+
+    yield  # Application runs here
+
+    # Shutdown logic (if any) would go here
+    logger.info("Shutting down Pixeletica API resources...")
+    # Example: await redis_instance.close() if you need to explicitly close connections
+
+
+# Create FastAPI app with lifespan manager
 app = FastAPI(
     title="Pixeletica API",
     description="API for converting images to Minecraft block art",
+    lifespan=lifespan,  # Use the lifespan context manager
     version="0.1.0",
     docs_url=None,  # Disable default docs
     redoc_url=None,  # Disable default redoc
@@ -53,26 +78,6 @@ app.add_middleware(
 # Add routes
 app.include_router(conversion.router)
 app.include_router(maps.router)
-
-
-# Define app startup event to initialize resources
-@app.on_event("startup")
-async def startup_event():
-    # Initialize rate limiter
-    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-    try:
-        redis_instance = redis.from_url(redis_url)
-        await FastAPILimiter.init(redis_instance)
-        logger.info("Redis connection established for rate limiting")
-    except Exception as e:
-        logger.error(f"Failed to connect to Redis: {e}")
-
-
-# Define app shutdown event to cleanup resources
-@app.on_event("shutdown")
-async def shutdown_event():
-    # Shutdown logic (if any) would go here
-    pass
 
 
 @app.get("/", tags=["Health"])
