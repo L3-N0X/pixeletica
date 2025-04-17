@@ -292,12 +292,53 @@ class FileInfo(BaseModel):
     )
 
 
+class RenderedCategoryDict(BaseModel):
+    """Dictionary of rendered file subcategories grouped by line type."""
+
+    block_lines: Optional[List[FileInfo]] = Field(
+        default=None, description="Rendered images with block grid lines"
+    )
+    chunk_lines: Optional[List[FileInfo]] = Field(
+        default=None, description="Rendered images with chunk border lines"
+    )
+    both_lines: Optional[List[FileInfo]] = Field(
+        default=None, description="Rendered images with both block and chunk lines"
+    )
+    no_lines: Optional[List[FileInfo]] = Field(
+        default=None, description="Rendered images without any grid lines"
+    )
+
+    class Config:
+        extra = "allow"  # Allow for future line types if needed
+
+
+class FileListCategories(BaseModel):
+    """The categories structure for the FileListResponse."""
+
+    input: Optional[FileInfo] = Field(default=None, description="Original input image")
+    dithered: Optional[FileInfo] = Field(
+        default=None, description="Dithered version of the input image"
+    )
+    rendered: Optional[RenderedCategoryDict] = Field(
+        default=None, description="Rendered images, grouped by line type"
+    )
+    schematic: Optional[FileInfo] = Field(
+        default=None, description="Generated schematic file"
+    )
+    task_zip: Optional[FileInfo] = Field(
+        default=None, description="ZIP archive of task files"
+    )
+
+    class Config:
+        extra = "allow"  # Allow additional categories if needed
+
+
 class FileListResponse(BaseModel):
     """Response model listing available files for a task, grouped by category."""
 
     taskId: str = Field(..., description="Task identifier")
-    categories: Dict[str, List[FileInfo]] = Field(
-        default_factory=dict, description="Files grouped by category"
+    categories: FileListCategories = Field(
+        default_factory=FileListCategories, description="Files grouped by category"
     )
 
 

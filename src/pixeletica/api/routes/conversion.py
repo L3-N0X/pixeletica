@@ -42,7 +42,6 @@ from src.pixeletica.api.config import (
 from src.pixeletica.api.models import (
     ConversionJSONMetadata,
     DitherAlgorithm,
-    FileCategory,
     FileListResponse,
     LineVisibilityOption,
     SelectiveDownloadRequest,
@@ -860,33 +859,54 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
                     "example": {
                         "taskId": "d290f1ee-6c54-4b01-90e6-d701748f0851",
                         "categories": {
-                            "dithered": [
-                                {
-                                    "fileId": "dithered_image",
-                                    "filename": "dithered.png",
-                                    "type": "image/png",
-                                    "size": 1024567,
-                                    "category": "dithered",
-                                }
-                            ],
-                            "rendered": [
-                                {
-                                    "fileId": "rendered_image",
-                                    "filename": "rendered.png",
-                                    "type": "image/png",
-                                    "size": 2048123,
-                                    "category": "rendered",
-                                }
-                            ],
-                            "schematic": [
-                                {
-                                    "fileId": "schematic",
-                                    "filename": "build.litematic",
-                                    "type": "application/octet-stream",
-                                    "size": 512789,
-                                    "category": "schematic",
-                                }
-                            ],
+                            "input": {
+                                "fileId": "input_original.png",
+                                "filename": "original.png",
+                                "type": "image/png",
+                                "size": 1574956,
+                                "category": "input",
+                            },
+                            "dithered": {
+                                "fileId": "dithered_image",
+                                "filename": "dithered.png",
+                                "type": "image/png",
+                                "size": 38317,
+                                "category": "dithered",
+                            },
+                            "rendered": {
+                                "block_lines": [
+                                    {
+                                        "fileId": "rendered_block_lines.png",
+                                        "filename": "block_lines.png",
+                                        "type": "image/png",
+                                        "size": 118231,
+                                        "category": "rendered",
+                                    },
+                                    {
+                                        "fileId": "rendered_block_lines_1.png",
+                                        "filename": "block_lines_1.png",
+                                        "type": "image/png",
+                                        "size": 118231,
+                                        "category": "rendered",
+                                    },
+                                ],
+                                "chunk_lines": [
+                                    {
+                                        "fileId": "rendered_chunk_lines.png",
+                                        "filename": "chunk_lines.png",
+                                        "type": "image/png",
+                                        "size": 63059,
+                                        "category": "rendered",
+                                    }
+                                ],
+                            },
+                            "schematic": {
+                                "fileId": "schematic_build.litematic",
+                                "filename": "build.litematic",
+                                "type": "application/octet-stream",
+                                "size": 18041,
+                                "category": "schematic",
+                            },
                         },
                     }
                 }
@@ -910,7 +930,9 @@ async def list_files(
     """
     List files generated for a task, grouped by category.
 
-    Files are automatically organized by their categories in the response.
+    Files are automatically organized by their categories in the response with a structure that
+    separates single-instance categories (input, dithered, schematic, task_zip) and categorizes
+    rendered images by line type (block_lines, chunk_lines, both_lines, no_lines).
 
     Args:
         task_id: The unique task identifier
@@ -935,27 +957,91 @@ async def list_files(
     if category:
         files = [f for f in files if f.get("category") == category]
 
+    # Filter out JSON files
+    files = [f for f in files if not f.get("filename", "").endswith(".json")]
+
     # Remove file path from response for security
     for file in files:
         if "path" in file:
             del file["path"]
 
-    # Group files by category
-    categories = {}
-    for file in files:
-        file_category = file.get("category")
-        valid_categories = [e.value for e in FileCategory]
-        if not file_category or file_category not in valid_categories:
-            logger.error(
-                f"Invalid file category: {file_category}. Using default category 'dithered'."
-            )
-            file_category = FileCategory.DITHERED.value
-        file["category"] = file_category
-        if file_category not in categories:
-            categories[file_category] = []
-        categories[file_category].append(file)
+    # Initialize the new structured categories
+    structured_categories = {
+        "input": None,
+        "dithered": None,
+        "rendered": {
+            "block_lines": [],
+            "chunk_lines": [],
+            "both_lines": [],
+            "no_lines": [],
+        },
+        "schematic": None,
+        "task_zip": None,
+    }
 
-    return FileListResponse(taskId=task_id, categories=categories)
+    import re
+
+    # Process each file to place it in the appropriate category
+    for file in files:
+        filename = file.get("filename", "")
+        category = file.get("category", "")
+
+        # Skip JSON files
+        if filename.endswith(".json"):
+            continue
+
+        # Handle special single-item categories
+        if filename.endswith(".litematic"):
+            structured_categories["schematic"] = file
+            continue
+
+        if filename.endswith(".zip"):
+            structured_categories["task_zip"] = file
+            continue
+
+        # Check if it's a dithered image
+        if category == "dithered" or "__dithered" in filename:
+            structured_categories["dithered"] = file
+            continue
+
+        # Find the input image (usually the largest original image)
+        # This heuristic might need adjustment based on how input files are actually stored
+        if "ComfyUI_00005_" in filename and len(filename.split("__")) == 1:
+            structured_categories["input"] = file
+            continue
+
+        # Categorize rendered images by line type
+        if category == "rendered" or category == "other":
+            # Check for line type in filename
+            line_type = None
+
+            # Check for pattern indicating line types
+            line_match = re.search(
+                r"__(block_lines|chunk_lines|both_lines|no_lines)(?:_\d+)?\.png$",
+                filename,
+            )
+            if line_match:
+                line_type = line_match.group(1)
+                if line_type in structured_categories["rendered"]:
+                    structured_categories["rendered"][line_type].append(file)
+                continue
+
+    # Clean up the response by removing empty categories
+    for key in list(structured_categories.keys()):
+        if key != "rendered" and structured_categories[key] is None:
+            del structured_categories[key]
+
+    # Clean up rendered subcategories
+    rendered = structured_categories.get("rendered", {})
+    for key in list(rendered.keys()):
+        if not rendered[key]:
+            del rendered[key]
+
+    # If rendered is empty, remove it
+    if "rendered" in structured_categories and not structured_categories["rendered"]:
+        del structured_categories["rendered"]
+
+    return FileListResponse(taskId=task_id, categories=structured_categories)
 
 
 # Handle OPTIONS requests for file download endpoint
