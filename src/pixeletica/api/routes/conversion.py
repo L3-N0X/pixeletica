@@ -951,7 +951,10 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
     },
 )
 async def list_files(
-    task_id: str, include_web: bool = False, category: Optional[str] = None
+    task_id: str,
+    request: Request,
+    include_web: bool = False,
+    category: Optional[str] = None,
 ) -> FileListResponse:
     """
     List files generated for a task, grouped by category.
@@ -1070,13 +1073,14 @@ async def list_files(
     # Prepare the response
     response = FileListResponse(taskId=task_id, categories=structured_categories)
 
-    # Get the request origin if available (for CORS handling)
-    from starlette.requests import Request
-
-    request = Request(scope={"type": "http"})
-    origin = request.headers.get(
-        "origin", cors_origins[0] if cors_origins != ["*"] else "*"
+    # Get the request origin for CORS headers
+    origin = (
+        request.headers.get("origin")
+        if request and hasattr(request, "headers")
+        else None
     )
+    if not origin:
+        origin = cors_origins[0] if cors_origins != ["*"] else "*"
 
     # Add CORS headers to the response
     from fastapi.responses import JSONResponse

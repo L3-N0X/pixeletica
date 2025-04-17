@@ -271,16 +271,16 @@ class TaskResponse(BaseModel):
 
 
 class FileCategory(str, Enum):
-    """Available categories for output files."""
+    """Category of a file in the task output."""
 
     DITHERED = "dithered"
     RENDERED = "rendered"
     SCHEMATIC = "schematic"
     WEB = "web"
-    SPLIT = "split"
     INPUT = "input"
     OTHER = "other"
     TASK_ZIP = "task_zip"
+    SPLIT = "split"
 
 
 class FileInfo(BaseModel):
