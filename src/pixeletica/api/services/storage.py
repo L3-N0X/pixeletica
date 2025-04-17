@@ -314,6 +314,10 @@ def save_base64_image(task_id: str, image_data: str, filename: str) -> Path:
     """
     task_dir = ensure_task_directory(task_id)
 
+    # Create input directory
+    input_dir = task_dir / "input"
+    input_dir.mkdir(exist_ok=True)
+
     # Handle data URI scheme if present
     if "," in image_data:
         image_data = image_data.split(",", 1)[1]
@@ -325,11 +329,12 @@ def save_base64_image(task_id: str, image_data: str, filename: str) -> Path:
         logger.error(f"Failed to decode base64 image for task {task_id}: {e}")
         raise ValueError(f"Invalid base64 image data: {str(e)}")
 
-    # Define the image path within the input directory
-    image_path = task_dir / filename
+    # Ensure filename starts with input_ prefix for consistency
+    if not filename.startswith("input_"):
+        filename = f"input_{filename}"
 
-    # Ensure the parent directory exists
-    image_path.parent.mkdir(parents=True, exist_ok=True)
+    # Define the image path within the input directory
+    image_path = input_dir / filename
 
     # Save the image
     with open(image_path, "wb") as f:
@@ -357,13 +362,41 @@ def save_output_file(
     """
     task_dir = ensure_task_directory(task_id)
 
-    # Only create subfolders for rendered and web
-    if category in ["rendered", "web"]:
+    # Create subdirectories for all valid categories
+    if category in [
+        "rendered",
+        "web",
+        "dithered",
+        "schematic",
+        "input",
+        "task_zip",
+        "split",
+    ]:
         output_dir = task_dir / category
         output_dir.mkdir(exist_ok=True)
         file_path = output_dir / filename
     else:
-        file_path = task_dir / filename  # Save at root
+        # Assign a valid category if an invalid one was passed
+        logger.warning(
+            f"Invalid category '{category}' for file {filename}, defaulting to 'input'"
+        )
+        category = "input"
+        output_dir = task_dir / category
+        output_dir.mkdir(exist_ok=True)
+        file_path = output_dir / filename
+
+    # Ensure split files use the _split<num> pattern consistently
+    if category == "rendered" and "_1" in filename and "_split" not in filename:
+        import re
+
+        split_match = re.search(r"_(\d+)\.png$", filename)
+        if split_match:
+            split_num = split_match.group(1)
+            new_filename = filename.replace(
+                f"_{split_num}.png", f"_split{split_num}.png"
+            )
+            file_path = output_dir / new_filename
+            filename = new_filename
 
     # Save the file based on its type
     try:
@@ -383,7 +416,19 @@ def save_output_file(
         mime_type = "application/octet-stream"
 
     # Create a stable file ID that can be consistently referenced
-    file_id = f"{category}_{filename}"
+    # Make sure we use the right prefix for the file ID based on category
+    if category == "rendered":
+        file_id = f"rendered_{filename}"
+    elif category == "schematic":
+        file_id = f"schematic_{filename}"
+    elif category == "dithered":
+        file_id = f"dithered_{filename}"
+    elif category == "input":
+        file_id = f"input_{filename}"
+    elif category == "task_zip":
+        file_id = f"task_zip_{filename}"
+    else:
+        file_id = f"{category}_{filename}"
 
     return {
         "fileId": file_id,
@@ -391,7 +436,7 @@ def save_output_file(
         "path": str(file_path),
         "type": mime_type,
         "size": file_size,
-        "category": category,
+        "category": category,  # Keep category for internal use, will be removed in API response
         "url": f"/api/conversion/{task_id}/files/{file_id}",
     }
 
@@ -422,11 +467,20 @@ def list_task_files(task_id: str, bypass_cache: bool = False) -> List[Dict]:
         root_path = Path(root)
         rel_parts = root_path.relative_to(task_dir).parts
 
-        # Determine category: only rendered, web, or root-level (other)
+        # Determine initial category based on directory location
         if len(rel_parts) == 0:
-            category = "other"
-        elif rel_parts[0] in ["rendered", "web"]:
-            category = rel_parts[0]
+            # Files in root directory - need to be categorized by filename/type
+            base_category = None  # Will be determined based on filename
+        elif rel_parts[0] in [
+            "rendered",
+            "web",
+            "dithered",
+            "schematic",
+            "input",
+            "task_zip",
+            "split",
+        ]:
+            base_category = rel_parts[0]
         else:
             # Skip forbidden subfolders
             continue
@@ -447,6 +501,31 @@ def list_task_files(task_id: str, bypass_cache: bool = False) -> List[Dict]:
                 mime_type = "application/octet-stream"
 
             file_size = file_path.stat().st_size
+
+            # Determine the appropriate category for the file
+            if base_category:
+                # Use the directory-based category if available
+                category = base_category
+            else:
+                # Categorize root-level files based on filename and type
+                if filename.endswith(".litematic"):
+                    category = "schematic"
+                elif filename.endswith(".zip"):
+                    category = "task_zip"
+                elif "__dithered" in filename or "_dithered" in filename:
+                    category = "dithered"
+                elif "original" in filename or filename.startswith("input_"):
+                    category = "input"
+                elif any(pattern in filename for pattern in ["__split", "part_"]):
+                    category = "split"
+                elif "rendered" in filename:
+                    category = "rendered"
+                elif "web" in filename or filename == "tile-data.json":
+                    category = "web"
+                else:
+                    # Default to input for any remaining files
+                    # This ensures all files have a valid category
+                    category = "input"
 
             # Create a stable file ID that can be consistently referenced
             file_id = f"{category}_{filename}"
@@ -481,25 +560,92 @@ def get_file_path(task_id: str, file_id: str) -> Optional[Path]:
     Returns:
         Path to the file or None if not found
     """
-    # Try root, rendered, and web
+    import re
+
+    # Try to parse file_id to get category and filename
     if "_" in file_id:
         try:
-            category, filename = file_id.split("_", 1)
-            task_dir = TASKS_DIR / task_id
-            if category in ["rendered", "web"]:
-                file_path = task_dir / category / filename
+            # Handle special case of split files that might have different naming patterns
+            split_pattern = re.compile(r"(rendered_.+?)(_split\d+|_\d+)(\.png)$")
+            split_match = split_pattern.match(file_id)
+
+            if split_match:
+                # Extract components from the split pattern
+                base_part = split_match.group(1).replace("rendered_", "")
+                split_part = split_match.group(2)
+                extension = split_match.group(3)
+
+                # Check if we need to convert old split pattern (_1, _2) to new (_split1, _split2)
+                if split_part.startswith("_") and split_part[1:].isdigit():
+                    new_split = f"_split{split_part[1:]}"
+                    new_filename = f"{base_part}{new_split}{extension}"
+                    legacy_filename = f"{base_part}{split_part}{extension}"
+
+                    # Try the new pattern first
+                    task_dir = TASKS_DIR / task_id
+                    file_path = task_dir / "rendered" / new_filename
+                    if file_path.exists():
+                        return file_path
+
+                    # Then try the legacy pattern
+                    file_path = task_dir / "rendered" / legacy_filename
+                    if file_path.exists():
+                        return file_path
+                else:
+                    # Standard split pattern
+                    category = "rendered"
+                    filename = file_id.replace("rendered_", "")
+                    task_dir = TASKS_DIR / task_id
+                    file_path = task_dir / category / filename
+                    if file_path.exists():
+                        return file_path
             else:
+                # Standard category and filename extraction
+                category, filename = file_id.split("_", 1)
+                task_dir = TASKS_DIR / task_id
+
+                # Check subdirectory first
+                if category in [
+                    "rendered",
+                    "web",
+                    "dithered",
+                    "schematic",
+                    "input",
+                    "task_zip",
+                    "split",
+                ]:
+                    file_path = task_dir / category / filename
+                    if file_path.exists():
+                        return file_path
+
+                # Then check root directory as fallback
                 file_path = task_dir / filename
-            if file_path.exists():
-                return file_path
-        except Exception:
-            pass
+                if file_path.exists():
+                    return file_path
+        except Exception as e:
+            logger.warning(f"Error parsing file_id {file_id}: {e}")
 
     # Fall back to scanning all files
     files = list_task_files(task_id)
     for file_info in files:
         if file_info["fileId"] == file_id:
             return Path(file_info["path"])
+        # Try alternate file ID format for backward compatibility
+        elif file_id.startswith("rendered_"):
+            # Check if this is a split file with old naming format
+            old_split_pattern = re.compile(r"rendered_(.+?)_(\d+)\.png$")
+            old_match = old_split_pattern.match(file_id)
+            new_split_pattern = re.compile(r"rendered_(.+?)_split(\d+)\.png$")
+            new_match = new_split_pattern.match(file_info["fileId"])
+
+            # Compare the base part and split number regardless of naming format
+            if (
+                old_match
+                and new_match
+                and old_match.group(1) == new_match.group(1)
+                and old_match.group(2) == new_match.group(2)
+            ):
+                return Path(file_info["path"])
 
     return None
 

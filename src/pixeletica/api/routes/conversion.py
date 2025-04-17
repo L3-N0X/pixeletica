@@ -15,10 +15,10 @@ import json
 import logging
 import mimetypes
 import os
+from pathlib import Path
 import time
 import uuid
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import (
@@ -891,48 +891,48 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
                                 "filename": "original.png",
                                 "type": "image/png",
                                 "size": 1574956,
-                                "category": "input",
                             },
                             "dithered": {
                                 "fileId": "dithered_image",
                                 "filename": "dithered.png",
                                 "type": "image/png",
                                 "size": 38317,
-                                "category": "dithered",
                             },
                             "rendered": {
                                 "block_lines": [
                                     {
-                                        "fileId": "rendered_block_lines.png",
-                                        "filename": "block_lines.png",
+                                        "fileId": "rendered_filename_block_lines.png",
+                                        "filename": "filename_block_lines.png",
                                         "type": "image/png",
                                         "size": 118231,
-                                        "category": "rendered",
                                     },
                                     {
-                                        "fileId": "rendered_block_lines_1.png",
-                                        "filename": "block_lines_1.png",
+                                        "fileId": "rendered_filename_block_lines_split1.png",
+                                        "filename": "filename_block_lines_split1.png",
                                         "type": "image/png",
                                         "size": 118231,
-                                        "category": "rendered",
                                     },
                                 ],
                                 "chunk_lines": [
                                     {
-                                        "fileId": "rendered_chunk_lines.png",
-                                        "filename": "chunk_lines.png",
+                                        "fileId": "rendered_filename_chunk_lines.png",
+                                        "filename": "filename_chunk_lines.png",
                                         "type": "image/png",
                                         "size": 63059,
-                                        "category": "rendered",
                                     }
                                 ],
                             },
                             "schematic": {
-                                "fileId": "schematic_build.litematic",
-                                "filename": "build.litematic",
+                                "fileId": "filename_Floyd_Steinberg_20250417_194844.litematic",
+                                "filename": "filename_Floyd_Steinberg_20250417_194844.litematic",
                                 "type": "application/octet-stream",
                                 "size": 18041,
-                                "category": "schematic",
+                            },
+                            "task_zip": {
+                                "fileId": "filename_task.zip",
+                                "filename": "filename_task.zip",
+                                "type": "application/zip",
+                                "size": 12345678,
                             },
                         },
                     }
@@ -1021,41 +1021,51 @@ async def list_files(
         if filename.endswith(".json"):
             continue
 
+        # Create a clean file object without the category field
+        clean_file = {
+            "fileId": file.get("fileId", ""),
+            "filename": file.get("filename", ""),
+            "type": file.get("type", ""),
+            "size": file.get("size", 0),
+        }
+
         # Handle special single-item categories
         if filename.endswith(".litematic"):
-            # Fix the schematic fileId to not use "other_" prefix
-            if file_id.startswith("other_"):
-                new_file_id = "schematic_" + filename
-                file["fileId"] = new_file_id
-            structured_categories["schematic"] = file
+            # Fix the file ID if needed
+            if not file_id.startswith("schematic_"):
+                clean_file["fileId"] = "schematic_" + filename
+            structured_categories["schematic"] = clean_file
             continue
 
         if filename.endswith(".zip"):
-            # Make sure zip file is properly categorized
-            if file_id.startswith("other_"):
-                new_file_id = "task_zip_" + filename
-                file["fileId"] = new_file_id
-            structured_categories["task_zip"] = file
+            # Fix the file ID if needed
+            if not file_id.startswith("task_zip_"):
+                clean_file["fileId"] = "task_zip_" + filename
+            structured_categories["task_zip"] = clean_file
             continue
 
         # Check if it's a dithered image
-        if category == "dithered" or "__dithered" in filename:
-            # Fix the dithered image fileId to not use "other_" prefix
-            if file_id.startswith("other_"):
-                new_file_id = "dithered_" + filename
-                file["fileId"] = new_file_id
-            structured_categories["dithered"] = file
+        if (
+            category == "dithered"
+            or "__dithered" in filename
+            or "_dithered" in filename
+        ):
+            # Fix the file ID if needed
+            if not file_id.startswith("dithered_"):
+                clean_file["fileId"] = "dithered_" + filename
+            structured_categories["dithered"] = clean_file
             continue
 
         # Find the input image (usually the largest original image)
         if (
-            "ComfyUI_00" in filename and len(filename.split("__")) == 1
-        ) or "original" in filename:
-            # Make sure it's labeled as input
-            if file_id.startswith("other_"):
-                new_file_id = "input_" + filename
-                file["fileId"] = new_file_id
-            structured_categories["input"] = file
+            ("ComfyUI_00" in filename and len(filename.split("__")) == 1)
+            or "original" in filename
+            or filename.startswith("input_")
+        ):
+            # Fix the file ID if needed
+            if not file_id.startswith("input_"):
+                clean_file["fileId"] = "input_" + filename
+            structured_categories["input"] = clean_file
             continue
 
         # Categorize rendered images by line type
@@ -1063,39 +1073,43 @@ async def list_files(
             # Check for line type in filename
             line_type = None
 
-            # Check for pattern indicating line types
+            # Enhanced pattern matching for line types with more robust split file detection
             line_match = re.search(
-                r"__(block_lines|chunk_lines|both_lines|no_lines)(?:_\d+)?\.png$",
+                r"__(block_lines|chunk_lines|both_lines|no_lines)(?:_split\d+|_\d+)?\.png$",
                 filename,
             )
             if line_match:
                 line_type = line_match.group(1)
                 if line_type in structured_categories["rendered"]:
-                    structured_categories["rendered"][line_type].append(file)
+                    # Ensure rendered file IDs have proper format
+                    if not clean_file["fileId"].startswith("rendered_"):
+                        clean_file["fileId"] = f"rendered_{filename}"
+
+                    # Ensure split file naming follows the _split<number> pattern
+                    if "_split" not in filename and any(
+                        x in filename for x in ["_1", "_2", "_3", "_4", "_5"]
+                    ):
+                        # Replace the old split pattern with the new one
+                        old_filename = clean_file["filename"]
+                        split_match = re.search(r"_(\d+)\.png$", old_filename)
+                        if split_match:
+                            split_num = split_match.group(1)
+                            new_filename = old_filename.replace(
+                                f"_{split_num}.png", f"_split{split_num}.png"
+                            )
+                            clean_file["filename"] = new_filename
+                            clean_file["fileId"] = f"rendered_{new_filename}"
+
+                    structured_categories["rendered"][line_type].append(clean_file)
                 continue
 
-        # For any remaining "other" category files with rendered patterns, recategorize them
-        if category == "other":
-            line_match = re.search(
-                r"__(block_lines|chunk_lines|both_lines|no_lines)(?:_\d+)?\.png$",
-                filename,
-            )
-            if line_match:
-                line_type = line_match.group(1)
-                if line_type in structured_categories["rendered"]:
-                    # Replace "other_" with "rendered_" in the fileId
-                    if file_id.startswith("other_"):
-                        new_file_id = "rendered_" + filename
-                        file["fileId"] = new_file_id
-                        file["category"] = "rendered"
-
-                    # Check if a file with the same name already exists in the rendered category
-                    # to avoid duplicates between "other" and "rendered" categories
-                    existing_files = structured_categories["rendered"][line_type]
-                    if not any(
-                        existing["filename"] == filename for existing in existing_files
-                    ):
-                        structured_categories["rendered"][line_type].append(file)
+            # If no specific line type found but it's in rendered category,
+            # add it to no_lines as default
+            if "no_lines" in structured_categories["rendered"]:
+                # Ensure rendered file IDs have proper format
+                if not clean_file["fileId"].startswith("rendered_"):
+                    clean_file["fileId"] = f"rendered_{filename}"
+                structured_categories["rendered"]["no_lines"].append(clean_file)
 
     # If input is still None, create an actual input file by copying the first suitable image
     if structured_categories["input"] is None:

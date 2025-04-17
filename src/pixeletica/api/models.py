@@ -289,9 +289,6 @@ class FileInfo(BaseModel):
     filename: str = Field(..., description="Original filename")
     type: str = Field(..., description="MIME type")
     size: int = Field(..., description="File size in bytes")
-    category: FileCategory = Field(
-        ..., description="File category (dithered, rendered, schematic, web, split)"
-    )
 
 
 class RenderedCategoryDict(BaseModel):

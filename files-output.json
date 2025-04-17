@@ -1,0 +1,111 @@
+{
+    "taskId": "00860d1b-0ce6-4731-b5bf-44936c1ab129",
+    "categories": {
+        "input": {
+            "fileId": "filename_input.png",
+            "filename": "filename_input.png",
+            "type": "image/png",
+            "size": 12345
+        },
+        "dithered": {
+            "fileId": "filename_dithered.png",
+            "filename": "filename_dithered.png",
+            "type": "image/png",
+            "size": 12186
+        },
+        "rendered": {
+            "block_lines": [
+                {
+                    "fileId": "rendered_filename_block_lines.png",
+                    "filename": "filename_block_lines.png",
+                    "type": "image/png",
+                    "size": 17660
+                },
+                {
+                    "fileId": "rendered_filename_block_lines_split1.png",
+                    "filename": "filename_block_lines_split1.png",
+                    "type": "image/png",
+                    "size": 18420
+                },
+                {
+                    "fileId": "rendered_filename_block_lines_split2.png",
+                    "filename": "filename_block_lines_split2.png",
+                    "type": "image/png",
+                    "size": 19102
+                }
+            ],
+            "chunk_lines": [
+                {
+                    "fileId": "rendered_filename_chunk_lines.png",
+                    "filename": "filename_chunk_lines.png",
+                    "type": "image/png",
+                    "size": 9550
+                },
+                {
+                    "fileId": "rendered_filename_chunk_lines_split1.png",
+                    "filename": "filename_chunk_lines_split1.png",
+                    "type": "image/png",
+                    "size": 9499
+                },
+                {
+                    "fileId": "rendered_filename_chunk_lines_split2.png",
+                    "filename": "filename_chunk_lines_split2.png",
+                    "type": "image/png",
+                    "size": 9600
+                }
+            ],
+            "both_lines": [
+                {
+                    "fileId": "rendered_filename_both_lines.png",
+                    "filename": "filename_both_lines.png",
+                    "type": "image/png",
+                    "size": 68721
+                },
+                {
+                    "fileId": "rendered_filename_both_lines_split1.png",
+                    "filename": "filename_both_lines_split1.png",
+                    "type": "image/png",
+                    "size": 18243
+                },
+                {
+                    "fileId": "rendered_filename_both_lines_split2.png",
+                    "filename": "filename_both_lines_split2.png",
+                    "type": "image/png",
+                    "size": 17831
+                }
+            ],
+            "no_lines": [
+                {
+                    "fileId": "rendered_filename_no_lines.png",
+                    "filename": "filename_no_lines.png",
+                    "type": "image/png",
+                    "size": 9153
+                },
+                {
+                    "fileId": "rendered_filename_no_lines_split1.png",
+                    "filename": "filename_no_lines_split1.png",
+                    "type": "image/png",
+                    "size": 9153
+                },
+                {
+                    "fileId": "rendered_filename_no_lines_split2.png",
+                    "filename": "filename_no_lines_split2.png",
+                    "type": "image/png",
+                    "size": 9043
+                }
+            ]
+        },
+        "schematic": {
+            "fileId": "filename_Floyd_Steinberg_split20250417_split194844.litematic",
+            "filename": "filename_Floyd_Steinberg_split20250417_split194844.litematic",
+            "type": "application/octet-stream",
+            "size": 7365
+        },
+        "task_zip": {
+            "fileId": "filename_task.zip",
+            "filename": "filename_task.zip",
+            "type": "application/zip",
+            "size": 12345678
+        }
+    }
+}
