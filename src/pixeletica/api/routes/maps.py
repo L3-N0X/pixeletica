@@ -160,12 +160,24 @@ async def list_maps() -> MapListResponse:
                         if not name:
                             name = f"Map {task_id[:6]}"
 
+                    # Find first dithered image for thumbnail
+                    thumbnail_path = None
+                    if has_dithered:
+                        for file_path in dithered_dir.glob("*.png"):
+                            thumbnail_path = (
+                                f"/api/map/{task_id}/dithered/{file_path.name}"
+                            )
+                            break
+                    # Fallback to old thumbnail endpoint if no dithered image
+                    if not thumbnail_path:
+                        thumbnail_path = f"/api/map/{task_id}/thumbnail.png"
+
                     # Create map info
                     map_info = MapInfo(
                         id=task_id,
                         name=name,
                         created=datetime.fromisoformat(metadata.get("updated")),
-                        thumbnail=f"/api/map/{task_id}/thumbnail.png",
+                        thumbnail=thumbnail_path,
                         description=config.get("description", ""),
                         width=width,
                         height=height,
@@ -470,37 +482,34 @@ async def get_map_full_image(map_id: str):
 )
 async def get_map_thumbnail(map_id: str):
     """
-    Get a thumbnail for a map.
+    Get a thumbnail for a map (returns the first dithered image).
 
     Args:
         map_id: Map identifier (task ID)
 
     Returns:
-        Thumbnail PNG image of the map
+        Thumbnail PNG image of the map (actually the dithered image)
     """
     # Check if map exists
     task_dir = storage.TASKS_DIR / map_id
 
-    # First, try to find a dithered image to use as thumbnail
-    # This will give a better representation of the pixel art
+    # Find the first dithered image to use as thumbnail
     dithered_dir = task_dir / "dithered"
     dithered_image = None
 
     if dithered_dir.exists():
-        # Find the first dithered image in the directory
         for file_path in dithered_dir.glob("*.png"):
             dithered_image = file_path
             break
 
-    # If no dithered image found, fallback to full-image in web dir
-    if not dithered_image:
+    # Fallback to full-image in web dir if no dithered image
+    if not dithered_image or not dithered_image.exists():
         dithered_image = task_dir / "web" / "full-image.png"
 
-    # If still not found, try potential alternative locations
+    # If still not found, try any PNG in web directory
     if not dithered_image.exists():
-        # Check for any PNG in web directory
         for file_path in (task_dir / "web").glob("*.png"):
-            if file_path.name != "thumbnail.png":  # Don't use existing thumbnail
+            if file_path.name != "thumbnail.png":
                 dithered_image = file_path
                 break
 
@@ -510,30 +519,14 @@ async def get_map_thumbnail(map_id: str):
             status_code=404, detail=f"Image not found for map: {map_id}"
         )
 
-    # Create a thumbnail if it doesn't exist
-    thumbnail_path = task_dir / "web" / "thumbnail.png"
-    if not thumbnail_path.exists():
-        try:
-            from PIL import Image
-
-            img = Image.open(dithered_image)
-            img.thumbnail((300, 300))
-            img.save(thumbnail_path, "PNG")
-            logger.info(f"Created thumbnail for {map_id} using {dithered_image}")
-        except Exception as e:
-            logger.error(f"Failed to create thumbnail: {e}")
-            return FileResponse(path=dithered_image, media_type="image/png")
-
     # Add CORS headers for file responses
     from starlette.requests import Request
 
-    # Get the request origin if available (for CORS handling)
     request = Request(scope={"type": "http"})
     origin = request.headers.get(
         "origin", cors_origins[0] if cors_origins != ["*"] else "*"
     )
 
-    # Add CORS headers for file responses
     headers = {
         "Access-Control-Allow-Origin": (
             origin
@@ -545,7 +538,7 @@ async def get_map_thumbnail(map_id: str):
         "Access-Control-Allow-Credentials": "true",
     }
 
-    return FileResponse(path=thumbnail_path, media_type="image/png", headers=headers)
+    return FileResponse(path=dithered_image, media_type="image/png", headers=headers)
 
 
 @router.get(
