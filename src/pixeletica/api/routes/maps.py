@@ -91,43 +91,86 @@ async def list_maps() -> MapListResponse:
             if not task_dir.is_dir():
                 continue
 
-            # Check if task is completed and has web exports
+            # Check if task is completed
             metadata = storage.load_task_metadata(task_id)
-            web_dir = task_dir / "web"
 
-            if (
-                metadata
-                and metadata.get("status") == "completed"
-                and web_dir.exists()
-                and (web_dir / "metadata.json").exists()
-            ):
+            if metadata and metadata.get("status") == "completed":
+                # Check for dithered image which is required for thumbnails
+                dithered_dir = task_dir / "dithered"
+                has_dithered = dithered_dir.exists() and any(dithered_dir.iterdir())
 
-                # Get dimensions from web metadata.json if available
-                width = None
-                height = None
-                web_metadata_path = web_dir / "metadata.json"
-                if web_metadata_path.exists():
-                    try:
-                        with open(web_metadata_path, "r") as f:
-                            web_metadata = json.load(f)
-                            width = web_metadata.get("width")
-                            height = web_metadata.get("height")
-                    except Exception as e:
-                        logger.error(
-                            f"Failed to read web metadata for task {task_id}: {e}"
-                        )
+                # Check for existence of web files
+                web_dir = task_dir / "web"
+                has_web = web_dir.exists()
 
-                # Create map info
-                map_info = MapInfo(
-                    id=task_id,
-                    name=metadata.get("name", f"Map {task_id[:6]}"),
-                    created=datetime.fromisoformat(metadata.get("updated")),
-                    thumbnail=f"/api/map/{task_id}/thumbnail.png",
-                    description=metadata.get("description"),
-                    width=width,
-                    height=height,
-                )
-                maps.append(map_info)
+                # Check for tiles directory
+                tiles_dir = web_dir / "tiles"
+                has_tiles = tiles_dir.exists() if has_web else False
+
+                # Only include tasks with dithered images or web exports
+                if has_dithered or (has_web and has_tiles):
+                    # Get dimensions from web metadata or tile-data.json if available
+                    width = None
+                    height = None
+
+                    # First, try the metadata.json file (previous format)
+                    web_metadata_path = web_dir / "metadata.json"
+                    if web_metadata_path.exists():
+                        try:
+                            with open(web_metadata_path, "r") as f:
+                                web_metadata = json.load(f)
+                                width = web_metadata.get("width")
+                                height = web_metadata.get("height")
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to read web metadata for task {task_id}: {e}"
+                            )
+
+                    # If not found, try tile-data.json (new format)
+                    if width is None or height is None:
+                        tile_data_path = web_dir / "tile-data.json"
+                        if tile_data_path.exists():
+                            try:
+                                with open(tile_data_path, "r") as f:
+                                    tile_data = json.load(f)
+                                    width = tile_data.get("width")
+                                    height = tile_data.get("height")
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to read tile-data for task {task_id}: {e}"
+                                )
+
+                    # Get the task configuration for additional info
+                    config = metadata.get("config", {})
+                    if not config and "config" not in metadata:
+                        # Old format might store configuration at root level
+                        config = metadata
+
+                    # Get or create a name for the map
+                    name = metadata.get("name", None)
+                    if not name:
+                        # Try to get the name from the filename
+                        filename = config.get("filename", "")
+                        if filename:
+                            from pathlib import Path
+
+                            name = Path(filename).stem
+
+                        # Fallback to task ID if no name is found
+                        if not name:
+                            name = f"Map {task_id[:6]}"
+
+                    # Create map info
+                    map_info = MapInfo(
+                        id=task_id,
+                        name=name,
+                        created=datetime.fromisoformat(metadata.get("updated")),
+                        thumbnail=f"/api/map/{task_id}/thumbnail.png",
+                        description=config.get("description", ""),
+                        width=width,
+                        height=height,
+                    )
+                    maps.append(map_info)
 
     return MapListResponse(maps=maps)
 
@@ -180,14 +223,112 @@ async def get_map_metadata(map_id: str):
     """
     # Check if map exists
     task_dir = storage.TASKS_DIR / map_id
+
+    # Try various metadata file locations
     metadata_path = task_dir / "web" / "metadata.json"
+    tile_data_path = task_dir / "web" / "tile-data.json"
 
-    if not metadata_path.exists():
+    metadata = None
+
+    # First try traditional metadata.json
+    if metadata_path.exists():
+        try:
+            with open(metadata_path, "r") as f:
+                metadata = json.load(f)
+                logger.info(f"Found metadata.json for map {map_id}")
+        except Exception as e:
+            logger.error(f"Failed to read metadata.json for map {map_id}: {e}")
+
+    # If not found or error, try tile-data.json
+    if not metadata and tile_data_path.exists():
+        try:
+            with open(tile_data_path, "r") as f:
+                tile_data = json.load(f)
+                logger.info(f"Found tile-data.json for map {map_id}")
+
+                # Convert tile data format to metadata format
+                metadata = {
+                    "width": tile_data.get("width"),
+                    "height": tile_data.get("height"),
+                    "origin_x": tile_data.get("origin_x", 0),
+                    "origin_z": tile_data.get("origin_z", 0),
+                    "tileSize": tile_data.get("tile_size", 512),
+                    "tiles_x": tile_data.get("tiles_x", 1),
+                    "tiles_z": tile_data.get("tiles_z", 1),
+                    "maxZoom": 0,  # Default single zoom level
+                    "minZoom": 0,
+                    "tileFormat": "png",
+                }
+        except Exception as e:
+            logger.error(f"Failed to read tile-data.json for map {map_id}: {e}")
+
+    # If still no metadata, check if we can generate minimal metadata
+    if not metadata:
+        # Check for dithered images or web exports
+        dithered_dir = task_dir / "dithered"
+        web_dir = task_dir / "web"
+        tiles_dir = web_dir / "tiles"
+
+        if dithered_dir.exists() and any(dithered_dir.iterdir()):
+            # Get dimensions from first dithered image
+            try:
+                from PIL import Image
+
+                for file_path in dithered_dir.glob("*.png"):
+                    with Image.open(file_path) as img:
+                        width, height = img.size
+                        metadata = {
+                            "width": width,
+                            "height": height,
+                            "origin_x": 0,
+                            "origin_z": 0,
+                            "tileSize": 512,
+                            "maxZoom": 0,
+                            "minZoom": 0,
+                            "tileFormat": "png",
+                        }
+                        logger.info(
+                            f"Generated metadata from dithered image for map {map_id}"
+                        )
+                        break
+            except Exception as e:
+                logger.error(
+                    f"Failed to generate metadata from dithered image for map {map_id}: {e}"
+                )
+
+        if not metadata and tiles_dir.exists():
+            # Try to determine metadata from directory structure
+            try:
+                zoom_levels = [d for d in tiles_dir.iterdir() if d.is_dir()]
+                if zoom_levels:
+                    # Use the highest zoom level to determine dimensions
+                    zoom_dirs = sorted(
+                        [int(d.name) for d in zoom_levels if d.name.isdigit()],
+                        reverse=True,
+                    )
+                    if zoom_dirs:
+                        max_zoom = zoom_dirs[0]
+                        metadata = {
+                            "width": 512 * (2**max_zoom),  # Estimate dimensions
+                            "height": 512 * (2**max_zoom),
+                            "origin_x": 0,
+                            "origin_z": 0,
+                            "tileSize": 512,
+                            "maxZoom": max_zoom,
+                            "minZoom": 0,
+                            "tileFormat": "png",
+                        }
+                        logger.info(
+                            f"Generated metadata from tile directory structure for map {map_id}"
+                        )
+            except Exception as e:
+                logger.error(
+                    f"Failed to generate metadata from tile directory structure for map {map_id}: {e}"
+                )
+
+    # If still no metadata found, return 404
+    if not metadata:
         raise HTTPException(status_code=404, detail=f"Map not found: {map_id}")
-
-    # Read the metadata file
-    with open(metadata_path, "r") as f:
-        metadata = json.load(f)
 
     # Add the map ID to the metadata
     metadata["id"] = map_id
@@ -339,9 +480,32 @@ async def get_map_thumbnail(map_id: str):
     """
     # Check if map exists
     task_dir = storage.TASKS_DIR / map_id
-    full_image_path = task_dir / "web" / "full-image.png"
 
-    if not full_image_path.exists():
+    # First, try to find a dithered image to use as thumbnail
+    # This will give a better representation of the pixel art
+    dithered_dir = task_dir / "dithered"
+    dithered_image = None
+
+    if dithered_dir.exists():
+        # Find the first dithered image in the directory
+        for file_path in dithered_dir.glob("*.png"):
+            dithered_image = file_path
+            break
+
+    # If no dithered image found, fallback to full-image in web dir
+    if not dithered_image:
+        dithered_image = task_dir / "web" / "full-image.png"
+
+    # If still not found, try potential alternative locations
+    if not dithered_image.exists():
+        # Check for any PNG in web directory
+        for file_path in (task_dir / "web").glob("*.png"):
+            if file_path.name != "thumbnail.png":  # Don't use existing thumbnail
+                dithered_image = file_path
+                break
+
+    # If still no image found, raise 404
+    if not dithered_image or not dithered_image.exists():
         raise HTTPException(
             status_code=404, detail=f"Image not found for map: {map_id}"
         )
@@ -352,12 +516,13 @@ async def get_map_thumbnail(map_id: str):
         try:
             from PIL import Image
 
-            img = Image.open(full_image_path)
+            img = Image.open(dithered_image)
             img.thumbnail((300, 300))
             img.save(thumbnail_path, "PNG")
+            logger.info(f"Created thumbnail for {map_id} using {dithered_image}")
         except Exception as e:
             logger.error(f"Failed to create thumbnail: {e}")
-            return FileResponse(path=full_image_path, media_type="image/png")
+            return FileResponse(path=dithered_image, media_type="image/png")
 
     # Add CORS headers for file responses
     from starlette.requests import Request
@@ -416,17 +581,43 @@ async def get_map_tile(
     Returns:
         PNG image of the requested tile
     """
+    # Try to get from Redis cache first
     tile_key = f"map:{map_id}:tile:{zoom}:{x}:{y}"
     cached_tile = await redis_client.get(tile_key)
 
     if cached_tile:
         # Return cached tile
+        logger.debug(f"Using cached tile for {map_id}: zoom={zoom}, x={x}, y={y}")
         return StreamingResponse(BytesIO(cached_tile), media_type="image/png")
 
     # Check if map exists
     task_dir = storage.TASKS_DIR / map_id
+
+    # Look for tiles in various possible locations
+
+    # Check standard path first
     tile_path = task_dir / "web" / "tiles" / str(zoom) / str(x) / f"{y}.png"
 
+    # If not found, try alternate structure (flat tiles directory)
+    if not tile_path.exists():
+        alt_tile_path = task_dir / "web" / "tiles" / f"{x}_{y}.png"
+        if alt_tile_path.exists():
+            tile_path = alt_tile_path
+
+    # If still not found, try checking for possible single-zoom exports
+    if not tile_path.exists() and zoom == 0:
+        # Some exports might not use zoom levels but just x/y coordinates
+        flat_tile_path = task_dir / "web" / "tiles" / f"{x}_{y}.png"
+        if flat_tile_path.exists():
+            tile_path = flat_tile_path
+
+    # If still not found, try a potential legacy structure
+    if not tile_path.exists():
+        legacy_tile_path = task_dir / "web" / f"tile_{x}_{y}.png"
+        if legacy_tile_path.exists():
+            tile_path = legacy_tile_path
+
+    # If no tile found in any location, return 404
     if not tile_path.exists():
         raise HTTPException(
             status_code=404, detail=f"Tile not found: zoom={zoom}, x={x}, y={y}"
@@ -437,7 +628,12 @@ async def get_map_tile(
         tile_data = f.read()
 
     # Cache the tile
-    await redis_client.set(tile_key, tile_data, ex=60 * 60)  # Cache for 1 hour
+    try:
+        await redis_client.set(tile_key, tile_data, ex=60 * 60)  # Cache for 1 hour
+        logger.debug(f"Cached tile for {map_id}: zoom={zoom}, x={x}, y={y}")
+    except Exception as e:
+        # Log error but continue - Redis caching is not critical
+        logger.warning(f"Failed to cache tile in Redis: {e}")
 
     # Add CORS headers for file responses
     from starlette.requests import Request
