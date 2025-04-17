@@ -59,11 +59,11 @@ if [ ! -d /app/out/cache ]; then
     echo "Created output directory structure: cache"
 fi
 
-# Set proper permissions if running as root
-if [ "$(id -u)" = "0" ]; then
-    chown -R pixeletica:pixeletica /app/out
-    echo "Set ownership of output directories to pixeletica user"
-fi
+# Ensure correct ownership of mounted volumes/directories
+# This needs to run as root before switching to the pixeletica user
+echo "Setting ownership for /app/tasks and /app/out..."
+chown -R pixeletica:pixeletica /app/tasks /app/out
+echo "Ownership set."
 
 # Check Redis connection if needed
 if [ "$WAIT_FOR_REDIS" = "true" ]; then
@@ -72,6 +72,6 @@ if [ "$WAIT_FOR_REDIS" = "true" ]; then
     echo "Redis is ready!"
 fi
 
-# Execute the command
-echo "Executing: $@"
-exec "$@"
+# Execute the command as the pixeletica user
+echo "Executing command as pixeletica user: $@"
+exec gosu pixeletica "$@"

@@ -15,11 +15,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies and gosu
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
     curl \
+    gosu \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -41,9 +42,9 @@ RUN mkdir -p /app/out/api_tasks \
     && mkdir -p /app/out/cache
 
 # Create and set up a non-root user
+# Ownership will be set in entrypoint.sh after volume mounts
 RUN useradd -m pixeletica \
     && chown -R pixeletica:pixeletica /app
-USER pixeletica
 
-# Command to run the API
+# Command to run the API (will be executed via entrypoint)
 CMD ["python", "-m", "pixeletica.api.main"]
