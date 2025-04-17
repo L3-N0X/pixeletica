@@ -278,6 +278,9 @@ class FileCategory(str, Enum):
     SCHEMATIC = "schematic"
     WEB = "web"
     SPLIT = "split"
+    INPUT = "input"
+    OTHER = "other"
+    TASK_ZIP = "task_zip"
 
 
 class FileInfo(BaseModel):

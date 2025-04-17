@@ -636,6 +636,32 @@ async def start_conversion(
     )
 
 
+# Handle OPTIONS requests for files listing endpoint
+@router.options("/{task_id}/files")
+async def options_list_files(task_id: str, request: Request):
+    """
+    Handle OPTIONS requests for the files listing endpoint to support CORS preflight requests.
+    """
+    # Get the request origin if available (for CORS handling)
+    origin = request.headers.get(
+        "origin", cors_origins[0] if cors_origins != ["*"] else "*"
+    )
+
+    headers = {
+        "Access-Control-Allow-Origin": (
+            origin
+            if origin in cors_origins or cors_origins == ["*"]
+            else cors_origins[0]
+        ),
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Max-Age": "600",  # Cache the preflight request for 10 minutes
+    }
+
+    return Response(status_code=204, headers=headers)
+
+
 @router.get(
     "/{task_id}",
     response_model=TaskResponse,
@@ -1041,7 +1067,33 @@ async def list_files(
     if "rendered" in structured_categories and not structured_categories["rendered"]:
         del structured_categories["rendered"]
 
-    return FileListResponse(taskId=task_id, categories=structured_categories)
+    # Prepare the response
+    response = FileListResponse(taskId=task_id, categories=structured_categories)
+
+    # Get the request origin if available (for CORS handling)
+    from starlette.requests import Request
+
+    request = Request(scope={"type": "http"})
+    origin = request.headers.get(
+        "origin", cors_origins[0] if cors_origins != ["*"] else "*"
+    )
+
+    # Add CORS headers to the response
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(
+        content=response.dict(),
+        headers={
+            "Access-Control-Allow-Origin": (
+                origin
+                if origin in cors_origins or cors_origins == ["*"]
+                else cors_origins[0]
+            ),
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Credentials": "true",
+        },
+    )
 
 
 # Handle OPTIONS requests for file download endpoint
