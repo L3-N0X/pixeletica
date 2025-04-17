@@ -99,14 +99,6 @@ services:
           cpus: "0.5"
           memory: 512M
       replicas: 1
-    command:
-      - celery
-      - -A
-      - pixeletica.api.services.task_queue.celery_app
-      - worker
-      - --loglevel=info
-      - --without-mingle
-      - --without-gossip
 
   redis:
     # Use Alpine for smaller image or full Redis for more features

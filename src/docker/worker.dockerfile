@@ -20,7 +20,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
     curl \
-    gosu \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -41,6 +40,7 @@ RUN mkdir -p /app/out/api_tasks \
 # Create and set up a non-root user
 RUN useradd -m pixeletica \
     && chown -R pixeletica:pixeletica /app
+
 USER pixeletica
 
 # Command to run the Celery worker, explicitly listening to the 'celery' queue

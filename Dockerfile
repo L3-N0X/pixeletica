@@ -45,5 +45,7 @@ RUN mkdir -p /app/out/api_tasks \
 RUN useradd -m pixeletica \
     && chown -R pixeletica:pixeletica /app
 
+USER pixeletica
+
 # Command to run the API (will be executed via entrypoint)
 CMD ["python", "-m", "pixeletica.api.main"]

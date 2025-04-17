@@ -59,12 +59,6 @@ if [ ! -d /app/out/cache ]; then
     echo "Created output directory structure: cache"
 fi
 
-# Ensure correct ownership of mounted volumes/directories
-# This needs to run as root before switching to the pixeletica user
-echo "Setting ownership for /app/tasks and /app/out..."
-chown -R pixeletica:pixeletica /app/tasks /app/out
-echo "Ownership set."
-
 # Check Redis connection if needed
 if [ "$WAIT_FOR_REDIS" = "true" ]; then
     echo "Waiting for Redis to be ready..."
@@ -72,12 +66,12 @@ if [ "$WAIT_FOR_REDIS" = "true" ]; then
     echo "Redis is ready!"
 fi
 
-# If running celery worker, print info and exec as pixeletica
+# If running celery worker, print info and execute the command
 if [[ "$1" == "celery" && "$2" == "-A"* && "$3" == *worker* ]]; then
-    echo "Starting Celery worker as pixeletica user: $@"
-    exec gosu pixeletica "$@"
+    echo "Starting Celery worker: $@"
+    exec "$@" # Removed gosu pixeletica
 fi
 
-# Default: execute the command as pixeletica user
-echo "Executing command as pixeletica user: $@"
-exec gosu pixeletica "$@"
+# Default: execute the command passed to the entrypoint
+echo "Executing command: $@"
+exec "$@" # Removed gosu pixeletica

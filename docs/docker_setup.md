@@ -65,8 +65,6 @@ The Docker Compose file supports many environment variables to customize the dep
 | `WORKER_REPLICAS` | `1` | Number of worker replicas |
 | `REDIS_MEMORY_LIMIT` | `256mb` | Memory limit for Redis |
 | `REDIS_MEMORY_POLICY` | `volatile-lru` | Redis memory policy |
-| `PIXELETICA_DATA_VOLUME` | `pixeletica_data` | Name for the pixeletica data volume |
-| `REDIS_DATA_VOLUME` | `pixeletica_redis_data` | Name for the Redis data volume |
 
 ## Deployment with GitHub Actions
 
@@ -139,8 +137,8 @@ To scale worker processes:
 
 Two Docker volumes are created for persistent data:
 
-1. **pixeletica_data**: Stores task data, shared between API and worker containers
-2. **redis_data**: Stores Redis data for queue persistence
+1. **pixeletica_tasks_data**: Stores task data (input images, metadata, output files) in `/app/tasks`, shared between API and worker containers.
+2. **redis_data**: Stores Redis data for queue persistence if the volume mount is uncommented in `docker-compose.yml`.
 
 ## Troubleshooting
 
