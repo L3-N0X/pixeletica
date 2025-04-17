@@ -278,7 +278,6 @@ class FileCategory(str, Enum):
     SCHEMATIC = "schematic"
     WEB = "web"
     INPUT = "input"
-    OTHER = "other"
     TASK_ZIP = "task_zip"
     SPLIT = "split"
 

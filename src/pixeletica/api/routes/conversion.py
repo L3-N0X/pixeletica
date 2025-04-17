@@ -1040,7 +1040,7 @@ async def list_files(
             continue
 
         # Categorize rendered images by line type
-        if category == "rendered" or category == "other":
+        if category == "rendered":
             # Check for line type in filename
             line_type = None
 
