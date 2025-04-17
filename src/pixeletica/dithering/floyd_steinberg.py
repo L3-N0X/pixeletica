@@ -7,12 +7,13 @@ from PIL import Image
 from src.pixeletica.block_utils.color_matcher import find_closest_block_color
 
 
-def apply_floyd_steinberg_dithering(img):
+def apply_floyd_steinberg_dithering(img, progress_callback=None):
     """
     Apply Floyd-Steinberg dithering algorithm.
 
     Args:
         img: PIL Image object
+        progress_callback: Optional callback function for progress updates
 
     Returns:
         Tuple of:
@@ -61,6 +62,9 @@ def apply_floyd_steinberg_dithering(img):
                 pixels[y + 1, x] += error * 5 / 16
             if x + 1 < width and y + 1 < height:
                 pixels[y + 1, x + 1] += error * 1 / 16
+        if progress_callback is not None:
+            progress = int((y + 1) / height * 100)
+            progress_callback(progress)
 
     # Convert back to PIL Image
     result_img = Image.fromarray(np.uint8(result))

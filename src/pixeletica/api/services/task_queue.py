@@ -579,7 +579,20 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
         update_progress(
             "applying_dither", 75
         )  # Starting actual dithering (75% of dithering step)
-        dithered_img, block_ids = dither_func(resized_img)
+        # Pass progress_callback if supported (for Floyd-Steinberg)
+        import inspect
+
+        dither_func_params = inspect.signature(dither_func).parameters
+        if "progress_callback" in dither_func_params:
+
+            def dithering_progress_callback(sub_progress):
+                update_progress("applying_dither", 75 + int(sub_progress * 0.25))
+
+            dithered_img, block_ids = dither_func(
+                resized_img, progress_callback=dithering_progress_callback
+            )
+        else:
+            dithered_img, block_ids = dither_func(resized_img)
         update_progress("applying_dither")  # Dithering complete
 
         # Save dithered image
@@ -612,8 +625,13 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
             texture_manager = TextureManager(texture_path)
 
             # Render blocks using the configured texture manager
+            def rendering_progress_callback(sub_progress):
+                update_progress("rendering_blocks", sub_progress)
+
             block_image = render_blocks_from_block_ids(
-                block_ids, texture_manager=texture_manager
+                block_ids,
+                texture_manager=texture_manager,
+                progress_callback=rendering_progress_callback,
             )
 
             if block_image:

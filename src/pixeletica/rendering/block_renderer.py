@@ -32,17 +32,24 @@ class BlockRenderer:
         self.texture_manager = texture_manager or TextureManager()
         self.texture_size = self.texture_manager.get_block_texture_size() or (16, 16)
 
-    def render_block(self, block_id, scale=1):
+    def render_block(
+        self, block_id, scale=1, missing_textures=None, default_texture=None
+    ):
         """
         Render a single block using its texture.
 
         Args:
             block_id: Minecraft block ID
             scale: Scale factor for the rendered block (default: 1)
+            missing_textures: set to collect missing block IDs (for logging)
+            default_texture: PIL Image to use if texture is missing
 
         Returns:
             PIL Image of the rendered block
         """
+        # Normalize block ID (strip whitespace, lower-case)
+        block_id = str(block_id).strip().lower()
+
         # For most blocks, we use the top texture in a flat map view
         texture = self.texture_manager.get_texture(block_id, face="top")
 
@@ -66,19 +73,19 @@ class BlockRenderer:
             if texture is None:
                 texture = self.texture_manager.get_texture(simple_block_id)
 
-        # If no texture is found, create a colored placeholder based on the block ID
+        # If no texture is found, use default texture or create a colored placeholder
         if texture is None:
-            logger.warning(
-                f"No texture found for block {block_id}, using fallback color"
-            )
-            # Hash the block ID to get a somewhat consistent color
-            hash_val = int(hashlib.md5(block_id.encode()).hexdigest(), 16)
-            r = (hash_val & 0xFF0000) >> 16
-            g = (hash_val & 0x00FF00) >> 8
-            b = hash_val & 0x0000FF
-
-            # Create a placeholder with the hashed color
-            texture = Image.new("RGBA", self.texture_size, (r, g, b, 255))
+            if missing_textures is not None:
+                missing_textures.add(block_id)
+            if default_texture is not None:
+                texture = default_texture.copy()
+            else:
+                # Hash the block ID to get a somewhat consistent color
+                hash_val = int(hashlib.md5(block_id.encode()).hexdigest(), 16)
+                r = (hash_val & 0xFF0000) >> 16
+                g = (hash_val & 0x00FF00) >> 8
+                b = hash_val & 0x0000FF
+                texture = Image.new("RGBA", self.texture_size, (r, g, b, 255))
 
         # Ensure the texture is in RGBA mode to preserve colors
         if texture.mode != "RGBA":
@@ -91,7 +98,7 @@ class BlockRenderer:
 
         return texture
 
-    def render_block_array(self, block_ids, scale=1):
+    def render_block_array(self, block_ids, scale=1, progress_callback=None):
         """
         Render a 2D array of blocks.
 
@@ -117,12 +124,22 @@ class BlockRenderer:
             "RGBA", (int(output_width), int(output_height)), (0, 0, 0, 0)
         )
 
+        # Prepare for missing texture logging
+        missing_textures = set()
+        # Optionally, load a default texture (e.g., "stone")
+        default_texture = self.texture_manager.get_texture("stone", face="top")
+
         # Render each block
         for z in range(height):
             for x in range(width):
                 block_id = block_ids[z][x]
                 if block_id:  # Skip None or empty blocks
-                    block_img = self.render_block(block_id, scale)
+                    block_img = self.render_block(
+                        block_id,
+                        scale,
+                        missing_textures=missing_textures,
+                        default_texture=default_texture,
+                    )
 
                     # Calculate position
                     pos_x = x * texture_width * scale
@@ -130,11 +147,21 @@ class BlockRenderer:
 
                     # Paste the block texture
                     output_image.paste(block_img, (int(pos_x), int(pos_z)), block_img)
+            if progress_callback is not None:
+                progress = int((z + 1) / height * 100)
+                progress_callback(progress)
+
+        if missing_textures:
+            logger.warning(
+                f"Missing textures for block IDs: {sorted(missing_textures)}"
+            )
 
         return output_image
 
 
-def render_blocks_from_block_ids(block_ids, scale=1, texture_manager=None):
+def render_blocks_from_block_ids(
+    block_ids, scale=1, texture_manager=None, progress_callback=None
+):
     """
     Convenience function to render blocks from block IDs.
 
@@ -142,6 +169,7 @@ def render_blocks_from_block_ids(block_ids, scale=1, texture_manager=None):
         block_ids: 2D array of block IDs
         scale: Scale factor for each block texture (default: 1)
         texture_manager: TextureManager instance or None
+        progress_callback: Optional callback function for progress updates
 
     Returns:
         PIL Image of the rendered blocks
@@ -155,4 +183,6 @@ def render_blocks_from_block_ids(block_ids, scale=1, texture_manager=None):
         texture_manager = TextureManager(texture_path)
 
     renderer = BlockRenderer(texture_manager)
-    return renderer.render_block_array(block_ids, scale)
+    return renderer.render_block_array(
+        block_ids, scale, progress_callback=progress_callback
+    )
