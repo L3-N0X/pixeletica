@@ -115,6 +115,9 @@ def save_task_metadata(task_id: str, metadata: Dict, force: bool = False) -> Pat
     retry_count = 3
     for attempt in range(retry_count):
         try:
+            # Ensure the parent directory exists
+            metadata_file.parent.mkdir(parents=True, exist_ok=True)
+
             # Use atomic write for better reliability
             temp_file = metadata_file.with_suffix(".json.tmp")
             with open(temp_file, "w") as f:
