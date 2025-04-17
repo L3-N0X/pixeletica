@@ -124,11 +124,9 @@ class TaskQueueMonitor:
     def get_task_metadata(self, task_id: str) -> Optional[Dict]:
         """Get task metadata from file storage."""
         task_dir = self.tasks_dir / task_id
-        metadata_file = task_dir / "metadata" / "task.json"
-
+        metadata_file = task_dir / "task.json"  # Use root, not metadata/
         if not metadata_file.exists():
             return None
-
         try:
             with open(metadata_file, "r") as f:
                 data = json.load(f)
@@ -354,16 +352,12 @@ class TaskQueueMonitor:
     def _save_task_metadata(self, task_id: str, metadata: Dict) -> bool:
         """Save task metadata to file."""
         task_dir = self.tasks_dir / task_id
-        metadata_dir = task_dir / "metadata"
-        metadata_file = metadata_dir / "task.json"
-
+        metadata_file = task_dir / "task.json"  # Use root, not metadata/
         try:
-            if not metadata_dir.exists():
-                metadata_dir.mkdir(parents=True, exist_ok=True)
-
+            if not task_dir.exists():
+                task_dir.mkdir(parents=True, exist_ok=True)
             with open(metadata_file, "w") as f:
                 json.dump(metadata, f, indent=2)
-
             return True
         except Exception as e:
             logger.error(f"Failed to save task metadata: {e}")

@@ -103,7 +103,7 @@ def save_task_metadata(task_id: str, metadata: Dict, force: bool = False) -> Pat
         Path to the saved metadata file
     """
     task_dir = ensure_task_directory(task_id)
-    metadata_file = task_dir / "metadata" / "task.json"
+    metadata_file = task_dir / "task.json"  # Save at root
 
     # Update timestamp
     metadata["updated"] = datetime.now().isoformat()
@@ -221,7 +221,7 @@ def load_task_metadata(task_id: str, bypass_cache: bool = False) -> Optional[Dic
     if bypass_cache:
         clear_metadata_cache(task_id)
 
-    metadata_file = TASKS_DIR / task_id / "metadata" / "task.json"
+    metadata_file = TASKS_DIR / task_id / "task.json"  # Load from root
 
     if not metadata_file.exists():
         return None
@@ -326,7 +326,7 @@ def save_base64_image(task_id: str, image_data: str, filename: str) -> Path:
         raise ValueError(f"Invalid base64 image data: {str(e)}")
 
     # Define the image path within the input directory
-    image_path = task_dir / "input" / filename
+    image_path = task_dir / filename
 
     # Ensure the parent directory exists
     image_path.parent.mkdir(parents=True, exist_ok=True)
@@ -357,14 +357,13 @@ def save_output_file(
     """
     task_dir = ensure_task_directory(task_id)
 
-    # Determine the appropriate subdirectory
-    if category not in ["dithered", "rendered", "schematic", "web", "input", "output"]:
-        category = "output"  # Default category
-
-    output_dir = task_dir / category
-    output_dir.mkdir(exist_ok=True)
-
-    file_path = output_dir / filename
+    # Only create subfolders for rendered and web
+    if category in ["rendered", "web"]:
+        output_dir = task_dir / category
+        output_dir.mkdir(exist_ok=True)
+        file_path = output_dir / filename
+    else:
+        file_path = task_dir / filename  # Save at root
 
     # Save the file based on its type
     try:
@@ -421,14 +420,15 @@ def list_task_files(task_id: str, bypass_cache: bool = False) -> List[Dict]:
     # Walk through the task directory and find all files
     for root, _, filenames in os.walk(task_dir):
         root_path = Path(root)
-        category = (
-            root_path.relative_to(task_dir).parts[0]
-            if len(root_path.relative_to(task_dir).parts) > 0
-            else "other"
-        )
+        rel_parts = root_path.relative_to(task_dir).parts
 
-        # Skip metadata directory from file listings
-        if category == "metadata":
+        # Determine category: only rendered, web, or root-level (other)
+        if len(rel_parts) == 0:
+            category = "other"
+        elif rel_parts[0] in ["rendered", "web"]:
+            category = rel_parts[0]
+        else:
+            # Skip forbidden subfolders
             continue
 
         for filename in filenames:
@@ -481,11 +481,15 @@ def get_file_path(task_id: str, file_id: str) -> Optional[Path]:
     Returns:
         Path to the file or None if not found
     """
-    # First try to parse the file_id format we generate (category_filename)
+    # Try root, rendered, and web
     if "_" in file_id:
         try:
             category, filename = file_id.split("_", 1)
-            file_path = TASKS_DIR / task_id / category / filename
+            task_dir = TASKS_DIR / task_id
+            if category in ["rendered", "web"]:
+                file_path = task_dir / category / filename
+            else:
+                file_path = task_dir / filename
             if file_path.exists():
                 return file_path
         except Exception:

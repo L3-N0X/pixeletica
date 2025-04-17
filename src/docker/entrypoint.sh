@@ -72,6 +72,12 @@ if [ "$WAIT_FOR_REDIS" = "true" ]; then
     echo "Redis is ready!"
 fi
 
-# Execute the command as the pixeletica user
+# If running celery worker, print info and exec as pixeletica
+if [[ "$1" == "celery" && "$2" == "-A"* && "$3" == *worker* ]]; then
+    echo "Starting Celery worker as pixeletica user: $@"
+    exec gosu pixeletica "$@"
+fi
+
+# Default: execute the command as pixeletica user
 echo "Executing command as pixeletica user: $@"
 exec gosu pixeletica "$@"

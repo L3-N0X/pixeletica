@@ -15,12 +15,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies and gosu
+# Install system dependencies and
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
     curl \
-    gosu \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

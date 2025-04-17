@@ -431,25 +431,6 @@ def update_task_status(
                 # meta=celery_result if celery_state == states.STARTED else None # Store progress in meta
             )
 
-            # # Alternative: Direct Redis update (less recommended)
-            # import redis
-            # r = redis.Redis.from_url(redis_url)
-            # task_key = f"celery-task-meta-{celery_id}"
-            # task_data = {
-            #     "status": celery_state,
-            #     "result": celery_result, # Needs careful serialization if Exception
-            #     "traceback": metadata.get("traceback") if celery_state == states.FAILURE else None,
-            #     "children": [],
-            #     "date_done": (
-            #         metadata.get("completedAt")
-            #         if celery_state in [states.SUCCESS, states.FAILURE]
-            #         else None
-            #     ),
-            #     # Add custom meta if needed
-            #     "meta": celery_result if celery_state == states.STARTED else None
-            # }
-            # r.set(task_key, json.dumps(task_data, default=str)) # Use default=str for Exception
-
             logger.info(
                 f"Updated Celery backend state for task {task_id} (celery_id={celery_id}) to {celery_state}"
             )
@@ -698,13 +679,6 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
 
                 # Define the root output directory for the task
                 task_output_dir = storage.TASKS_DIR / task_id
-                # storage.ensure_task_directory(task_id) # Already ensured earlier
-                # Remove old directory creation logic
-                # web_output_dir = str(storage.TASKS_DIR / task_id / "web")
-                # logger.info(f"Exporting files to web directory: {web_output_dir}")
-                # os.makedirs(web_output_dir, exist_ok=True)
-                # rendered_dir = os.path.join(web_output_dir, "rendered")
-                # os.makedirs(rendered_dir, exist_ok=True)
                 logger.info(f"Exporting files to task directory: {task_output_dir}")
 
                 export_results = export_processed_image(
