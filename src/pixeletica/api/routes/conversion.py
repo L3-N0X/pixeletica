@@ -18,6 +18,7 @@ import os
 import time
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import (
@@ -1014,6 +1015,7 @@ async def list_files(
     for file in files:
         filename = file.get("filename", "")
         category = file.get("category", "")
+        file_id = file.get("fileId", "")
 
         # Skip JSON files
         if filename.endswith(".json"):
@@ -1021,21 +1023,38 @@ async def list_files(
 
         # Handle special single-item categories
         if filename.endswith(".litematic"):
+            # Fix the schematic fileId to not use "other_" prefix
+            if file_id.startswith("other_"):
+                new_file_id = "schematic_" + filename
+                file["fileId"] = new_file_id
             structured_categories["schematic"] = file
             continue
 
         if filename.endswith(".zip"):
+            # Make sure zip file is properly categorized
+            if file_id.startswith("other_"):
+                new_file_id = "task_zip_" + filename
+                file["fileId"] = new_file_id
             structured_categories["task_zip"] = file
             continue
 
         # Check if it's a dithered image
         if category == "dithered" or "__dithered" in filename:
+            # Fix the dithered image fileId to not use "other_" prefix
+            if file_id.startswith("other_"):
+                new_file_id = "dithered_" + filename
+                file["fileId"] = new_file_id
             structured_categories["dithered"] = file
             continue
 
         # Find the input image (usually the largest original image)
-        # This heuristic might need adjustment based on how input files are actually stored
-        if "ComfyUI_00005_" in filename and len(filename.split("__")) == 1:
+        if (
+            "ComfyUI_00" in filename and len(filename.split("__")) == 1
+        ) or "original" in filename:
+            # Make sure it's labeled as input
+            if file_id.startswith("other_"):
+                new_file_id = "input_" + filename
+                file["fileId"] = new_file_id
             structured_categories["input"] = file
             continue
 
@@ -1055,10 +1074,99 @@ async def list_files(
                     structured_categories["rendered"][line_type].append(file)
                 continue
 
-    # Clean up the response by removing empty categories
-    for key in list(structured_categories.keys()):
-        if key != "rendered" and structured_categories[key] is None:
-            del structured_categories[key]
+        # For any remaining "other" category files with rendered patterns, recategorize them
+        if category == "other":
+            line_match = re.search(
+                r"__(block_lines|chunk_lines|both_lines|no_lines)(?:_\d+)?\.png$",
+                filename,
+            )
+            if line_match:
+                line_type = line_match.group(1)
+                if line_type in structured_categories["rendered"]:
+                    # Replace "other_" with "rendered_" in the fileId
+                    if file_id.startswith("other_"):
+                        new_file_id = "rendered_" + filename
+                        file["fileId"] = new_file_id
+                        file["category"] = "rendered"
+
+                    # Check if a file with the same name already exists in the rendered category
+                    # to avoid duplicates between "other" and "rendered" categories
+                    existing_files = structured_categories["rendered"][line_type]
+                    if not any(
+                        existing["filename"] == filename for existing in existing_files
+                    ):
+                        structured_categories["rendered"][line_type].append(file)
+
+    # If input is still None, create an actual input file by copying the first suitable image
+    if structured_categories["input"] is None:
+        for file in files:
+            if (
+                file.get("type", "").startswith("image/")
+                and not file.get("filename", "").endswith(".json")
+                and "path" in file
+            ):
+                # Get the source path
+                source_path = Path(file["path"])
+                if source_path.exists():
+                    try:
+                        # Create input file name
+                        input_filename = "input_" + source_path.name
+                        task_dir = storage.ensure_task_directory(task_id)
+                        target_path = task_dir / input_filename
+
+                        # Copy the file
+                        import shutil
+
+                        shutil.copy2(source_path, target_path)
+
+                        # Create file info
+                        file_size = target_path.stat().st_size
+                        mime_type, _ = mimetypes.guess_type(str(target_path))
+                        if not mime_type:
+                            mime_type = "application/octet-stream"
+
+                        input_file = {
+                            "fileId": f"input_{input_filename}",
+                            "filename": input_filename,
+                            "type": mime_type,
+                            "size": file_size,
+                            "category": "input",
+                            "url": f"/api/conversion/{task_id}/files/input_{input_filename}",
+                        }
+                        structured_categories["input"] = input_file
+                        logger.info(
+                            f"Created input file for task {task_id}: {input_filename}"
+                        )
+                        break
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to create input file for task {task_id}: {e}"
+                        )
+
+    # If task_zip is still None, create it using the storage service
+    if structured_categories["task_zip"] is None:
+        # Create a ZIP archive with all files
+        zip_path = storage.create_zip_archive(task_id)
+
+        if zip_path and zip_path.exists():
+            # Get file info
+            file_size = zip_path.stat().st_size
+            zip_filename = zip_path.name
+
+            # Create file info
+            task_zip_file = {
+                "fileId": f"task_zip_{zip_filename}",
+                "filename": zip_filename,
+                "type": "application/zip",
+                "size": file_size,
+                "category": "task_zip",
+                "url": f"/api/conversion/{task_id}/download",
+            }
+            structured_categories["task_zip"] = task_zip_file
+            logger.info(f"Created ZIP archive for task {task_id}: {zip_filename}")
+
+    # Do not remove categories that need to exist according to requirements
+    # Keep input, task_zip, and dithered even if they're None
 
     # Clean up rendered subcategories
     rendered = structured_categories.get("rendered", {})
