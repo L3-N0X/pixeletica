@@ -10,7 +10,6 @@ import argparse
 import json
 import logging
 import os
-import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -301,11 +300,6 @@ class TaskQueueMonitor:
             elif action == "requeue":
                 # Try to requeue the task by importing task_queue and recreating
                 from src.pixeletica.api.services.task_queue import process_image_task
-
-                # Prepare minimal request data
-                request_data = {
-                    "filename": metadata.get("config", {}).get("filename", "image.png"),
-                }
 
                 # Get the input image path
                 input_image_path = metadata.get("inputImagePath")

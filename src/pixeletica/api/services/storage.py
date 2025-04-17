@@ -15,11 +15,11 @@ import logging
 import mimetypes
 import os
 import shutil
-import uuid
 from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Any
+from typing import Dict, List, Optional, Union
+import time as time
 
 from PIL import Image
 
@@ -181,7 +181,7 @@ def save_task_metadata(task_id: str, metadata: Dict, force: bool = False) -> Pat
                                         # Try to verify again with the cleaned content
                                         verification_data = json.loads(clean_content)
                                         logger.info(
-                                            f"Successfully fixed and verified metadata JSON"
+                                            "Successfully fixed and verified metadata JSON"
                                         )
                                 except Exception as fix_error:
                                     logger.error(f"Failed to fix JSON: {fix_error}")
@@ -205,7 +205,7 @@ def save_task_metadata(task_id: str, metadata: Dict, force: bool = False) -> Pat
             return metadata_file
         except Exception as e:
             logger.error(
-                f"Error saving task metadata (attempt {attempt+1}/{retry_count}): {e}"
+                f"Error saving task metadata (attempt {attempt + 1}/{retry_count}): {e}"
             )
             if attempt == retry_count - 1:
                 logger.critical(
@@ -250,7 +250,7 @@ def load_task_metadata(task_id: str, bypass_cache: bool = False) -> Optional[Dic
                     data = json.loads(file_content)
                 except json.JSONDecodeError as jde:
                     logger.error(
-                        f"JSON decode error in metadata for task {task_id} (attempt {attempt+1}/{retry_count}): {jde}"
+                        f"JSON decode error in metadata for task {task_id} (attempt {attempt + 1}/{retry_count}): {jde}"
                     )
 
                     # Try to fix the JSON if we encounter common issues

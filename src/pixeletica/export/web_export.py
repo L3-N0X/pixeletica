@@ -8,8 +8,6 @@ for use in external web viewers.
 import os
 import json
 import math
-from PIL import Image
-from pathlib import Path
 
 
 def export_web_tiles(image, output_dir, tile_size=512, origin_x=0, origin_z=0):

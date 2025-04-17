@@ -9,7 +9,6 @@ from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_limiter import FastAPILimiter
-from fastapi_limiter.depends import RateLimiter
 import redis.asyncio as redis
 from typing import Dict, Any
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -17,7 +16,6 @@ from src.pixeletica.api.routes import conversion, maps
 from src.pixeletica.api.config import MAX_FILE_SIZE  # Import from config
 import logging
 import os
-import time
 import json
 
 # Constants

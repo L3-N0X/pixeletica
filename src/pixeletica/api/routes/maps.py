@@ -439,9 +439,7 @@ async def get_map_full_image(map_id: str):
             status_code=404, detail=f"Full image not found for map: {map_id}"
         )
 
-    # Add CORS headers for file responses
     from starlette.requests import Request
-    from fastapi import Response
 
     # Get the request origin if available (for CORS handling)
     request = Request(scope={"type": "http"})

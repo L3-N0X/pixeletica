@@ -8,8 +8,6 @@ handling web exports, single large images, and split images with or without line
 import os
 import datetime
 import json
-from PIL import Image
-from pathlib import Path
 
 from src.pixeletica.rendering.line_renderer import apply_lines_to_image
 from src.pixeletica.coordinates.chunk_calculator import calculate_image_offset

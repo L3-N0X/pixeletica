@@ -4,9 +4,7 @@ Metadata handling for processed images.
 
 import os
 import json
-import time
 import datetime
-from PIL import Image
 import numpy as np
 
 

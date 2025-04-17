@@ -9,10 +9,9 @@ import logging
 import os
 import json
 import uuid
-import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Union, List, Tuple
+from typing import Any, Dict, Optional, Union
 
 from celery import Celery, states
 from celery.result import AsyncResult
@@ -124,7 +123,7 @@ def sync_task_state(task_id: str, celery_id: Optional[str] = None) -> Dict:
             logger.error(f"Error checking Redis for task {task_id}: {e}")
 
     # Save metadata back to storage
-    success = storage.save_task_metadata(task_id, metadata, force=True)
+    storage.save_task_metadata(task_id, metadata, force=True)
 
     # Verify we can read it back
     verification = storage.load_task_metadata(task_id, bypass_cache=True)
@@ -198,7 +197,7 @@ def create_task(request_data: Dict) -> str:
             r = redis.Redis.from_url(redis_url)
             r.ping()
             redis_ok = True
-            logger.info(f"Redis connection verified for task creation")
+            logger.info("Redis connection verified for task creation")
         except Exception as e:
             redis_ok = False
             logger.error(f"Redis connection failed! Task queuing may fail: {e}")

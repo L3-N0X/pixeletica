@@ -78,9 +78,6 @@ class DitherApp:
         # Log application start
         self.logger.info("Application started")
 
-        # Use default theme
-        style = ttk.Style()
-
         # Create status bar at the bottom
         self._create_status_bar(root)
 
@@ -716,8 +713,6 @@ class DitherApp:
                                 f"Process complete! Exported images to: {export_results['export_dir']} and schematic to: {schematic_path}"
                             )
 
-                            # Show success alert and ask to open folder
-                            success_message = f"Conversion completed successfully!\n\nImages exported to: {export_results['export_dir']}\nSchematic saved to: {schematic_path}"
                             self.show_completion_alert(export_results["export_dir"])
 
                         except Exception as e:
@@ -727,8 +722,6 @@ class DitherApp:
                             f"Process complete! Exported images to: {export_results['export_dir']}"
                         )
 
-                        # Show success alert and ask to open folder
-                        success_message = f"Conversion completed successfully!\n\nImages exported to: {export_results['export_dir']}"
                         self.show_completion_alert(export_results["export_dir"])
                 else:
                     self.status_var.set("Error: Failed to render blocks with textures")

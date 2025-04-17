@@ -6,7 +6,6 @@ This module provides the GUI components for configuring export settings.
 
 import tkinter as tk
 from tkinter import ttk, colorchooser
-import re
 
 from src.pixeletica.rendering.line_renderer import (
     DEFAULT_CHUNK_LINE_COLOR,
@@ -319,10 +318,6 @@ class ExportSettingsFrame(ttk.Frame):
         # Ensure at least one export type is selected
         if not export_types:
             export_types.append(EXPORT_TYPE_LARGE)
-
-        # Ensure at least one version is selected
-        with_lines = self.with_lines_var.get()
-        without_lines = self.without_lines_var.get()
 
         version_options = {
             "no_lines": self.no_lines_var.get(),

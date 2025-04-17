@@ -8,17 +8,17 @@ This module defines the FastAPI endpoints for:
 - Downloading files
 """
 
-import base64
-import mimetypes
 import asyncio
+import base64
 import io
-from typing import Optional, Dict, Any, List
 import json
-import uuid
-from datetime import datetime
+import logging
+import mimetypes
 import os
 import time
-import logging
+import uuid
+from datetime import datetime
+from typing import Any, Dict, Optional
 
 from fastapi import (
     APIRouter,
@@ -29,11 +29,10 @@ from fastapi import (
     HTTPException,
     UploadFile,
     status,
-    Query,
-    Body,
 )
-from fastapi.responses import FileResponse, StreamingResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi_limiter.depends import RateLimiter
+from PIL import Image
 from starlette.requests import Request
 
 from src.pixeletica.api.config import (
@@ -41,19 +40,17 @@ from src.pixeletica.api.config import (
     PREVIEW_CONVERSION_TIMEOUT,
 )  # Import from config
 from src.pixeletica.api.models import (
+    ConversionJSONMetadata,
+    DitherAlgorithm,
+    FileCategory,
     FileListResponse,
+    LineVisibilityOption,
     SelectiveDownloadRequest,
     TaskResponse,
-    DitherAlgorithm,
-    LineVisibilityOption,
-    ConversionJSONMetadata,
-    FileCategory,
 )
 from src.pixeletica.api.services import storage, task_queue
 from src.pixeletica.dithering import get_algorithm_by_name
 from src.pixeletica.image_ops import resize_image
-from PIL import Image
-import numpy as np
 
 # Set up logging
 logger = logging.getLogger("pixeletica.api.routes.conversion")
@@ -581,7 +578,7 @@ async def start_conversion(
     for attempt in range(retry_count):
         try:
             logger.info(
-                f"[REQ-{request_id}] Creating task (attempt {attempt+1}/{retry_count})"
+                f"[REQ-{request_id}] Creating task (attempt {attempt + 1}/{retry_count})"
             )
             task_id = task_queue.create_task(task_data)
 
@@ -609,7 +606,7 @@ async def start_conversion(
 
         except Exception as e:
             logger.error(
-                f"[REQ-{request_id}] Error creating task (attempt {attempt+1}/{retry_count}): {e}",
+                f"[REQ-{request_id}] Error creating task (attempt {attempt + 1}/{retry_count}): {e}",
                 exc_info=True,
             )
             if attempt == retry_count - 1:
@@ -722,8 +719,8 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
         # Check Celery task status directly if needed
         if celery_id:
             try:
-                from celery.result import AsyncResult
                 from celery import states
+                from celery.result import AsyncResult
 
                 result = AsyncResult(celery_id, app=task_queue.celery_app)
                 celery_state = result.state
@@ -844,7 +841,7 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
                 timestamp=datetime.now().isoformat(),
                 error=None,  # Don't return error to client in this fallback
             )
-        except:
+        except Exception:
             # If even the fallback fails, then raise the HTTP exception
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

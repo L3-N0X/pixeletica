@@ -5,7 +5,6 @@ This module provides functionality for rendering blocks using actual Minecraft t
 rather than solid colors from a color palette.
 """
 
-import numpy as np
 import hashlib
 import logging
 import os

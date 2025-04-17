@@ -7,12 +7,10 @@ and manage stuck tasks from the command line.
 """
 
 import argparse
-import json
 import logging
 import sys
 from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional
 
 # Add the parent directory to the path for imports
 import os

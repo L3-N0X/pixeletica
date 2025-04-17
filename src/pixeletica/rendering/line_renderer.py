@@ -4,12 +4,10 @@ Line rendering for image visualization.
 This module provides functionality for adding chunk boundary lines and block grid lines to images.
 """
 
-from PIL import Image, ImageDraw
+from PIL import ImageDraw
 import re
 
 from src.pixeletica.coordinates.chunk_calculator import (
-    is_chunk_boundary_x,
-    is_chunk_boundary_z,
     is_block_boundary_pixel,
     is_chunk_boundary_pixel,
 )

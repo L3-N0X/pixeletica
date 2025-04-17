@@ -6,7 +6,6 @@ This module provides functionality for splitting images into multiple equal-size
 
 import os
 import math
-from PIL import Image
 
 
 def split_image(
@@ -37,7 +36,7 @@ def split_image(
 
     # Log if texture manager was provided
     if texture_manager:
-        logger.info(f"Using provided texture manager for image splitting")
+        logger.info("Using provided texture manager for image splitting")
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)
 

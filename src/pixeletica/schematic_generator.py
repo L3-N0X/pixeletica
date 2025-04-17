@@ -2,7 +2,7 @@
 Module for generating Litematica schematics from dithered images.
 """
 
-from litemapy import Schematic, Region, BlockState
+from litemapy import Region, BlockState
 import os
 import time
 import numpy as np

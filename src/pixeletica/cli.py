@@ -108,9 +108,7 @@ def run_cli():
     dither_func, algorithm_id = get_algorithm_by_name(algorithm_name)
 
     if not dither_func:
-        print(
-            f"Unknown algorithm selected. Using Floyd-Steinberg dithering as default."
-        )
+        print("Unknown algorithm selected. Using Floyd-Steinberg dithering as default.")
         dither_func, algorithm_id = get_algorithm_by_name("floyd_steinberg")
 
     # Apply selected dithering algorithm
@@ -401,7 +399,7 @@ def main():
 
         # Start the GUI
         root = tk.Tk()
-        app = DitherApp(root)
+        DitherApp(root)
         root.mainloop()
     elif args.mode == "api":
         # Start the API server

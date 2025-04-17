@@ -2,7 +2,6 @@
 Dithering algorithm implementations.
 """
 
-from src.pixeletica.dithering.no_dither import apply_no_dithering
 from src.pixeletica.dithering.floyd_steinberg import apply_floyd_steinberg_dithering
 from src.pixeletica.dithering.ordered_dither import apply_ordered_dithering
 from src.pixeletica.dithering.random_dither import apply_random_dithering
