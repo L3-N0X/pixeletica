@@ -696,11 +696,16 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                     "splitCount", config.get("image_division", 1)
                 )
 
-                web_output_dir = str(storage.TASKS_DIR / task_id / "web")
-                logger.info(f"Exporting files to web directory: {web_output_dir}")
-                os.makedirs(web_output_dir, exist_ok=True)
-                rendered_dir = os.path.join(web_output_dir, "rendered")
-                os.makedirs(rendered_dir, exist_ok=True)
+                # Define the root output directory for the task
+                task_output_dir = storage.TASKS_DIR / task_id
+                # storage.ensure_task_directory(task_id) # Already ensured earlier
+                # Remove old directory creation logic
+                # web_output_dir = str(storage.TASKS_DIR / task_id / "web")
+                # logger.info(f"Exporting files to web directory: {web_output_dir}")
+                # os.makedirs(web_output_dir, exist_ok=True)
+                # rendered_dir = os.path.join(web_output_dir, "rendered")
+                # os.makedirs(rendered_dir, exist_ok=True)
+                logger.info(f"Exporting files to task directory: {task_output_dir}")
 
                 export_results = export_processed_image(
                     block_image,
@@ -715,7 +720,7 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                     split_count=split_count,
                     version_options=version_options,
                     algorithm_name=algorithm_id,
-                    output_dir=web_output_dir,
+                    output_dir=str(task_output_dir),  # Pass the root task directory
                 )
                 logger.info(f"Export results: {export_results}")
                 metadata["exports"] = export_results

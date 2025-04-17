@@ -31,11 +31,11 @@ class ExportManager:
             output_dir: Base directory for output files
         """
         self.output_dir = output_dir
-        self.base_export_dir = os.path.join(output_dir, "exports")
+        # self.base_export_dir = os.path.join(output_dir, "exports") # Removed unused base_export_dir
 
-        # Ensure output directories exist
+        # Ensure output directory exists
         os.makedirs(self.output_dir, exist_ok=True)
-        os.makedirs(self.base_export_dir, exist_ok=True)
+        # os.makedirs(self.base_export_dir, exist_ok=True) # Removed unused base_export_dir creation
 
     def export_image(
         self,
@@ -44,18 +44,21 @@ class ExportManager:
         export_types=None,
         origin_x=0,
         origin_z=0,
+        # Default flags, primarily used if version_options is None or for fallback
         draw_chunk_lines=False,
         chunk_line_color="FF0000FF",
         draw_block_lines=False,
         block_line_color="CCCCCC88",
         split_count=4,
         web_tile_size=512,
-        include_lines_version=True,
-        include_no_lines_version=False,
         algorithm_name="",
+        version_options=None,  # Preferred way to specify line versions
+        # Deprecated flags, kept for potential internal fallback logic but shouldn't be primary control
+        include_lines_version=None,
+        include_no_lines_version=None,
     ):
         """
-        Export an image in the specified formats.
+        Export an image in the specified formats, handling multiple line versions.
 
         Args:
             image: PIL Image to export
@@ -63,43 +66,83 @@ class ExportManager:
             export_types: List of export types (web, large, split) or None to export all
             origin_x: X-coordinate of the world origin
             origin_z: Z-coordinate of the world origin
-            draw_chunk_lines: Whether to draw chunk lines on exported images
+            draw_chunk_lines: Default flag if version_options is None
             chunk_line_color: Color for chunk lines (hex format)
-            draw_block_lines: Whether to draw block grid lines on exported images
+            draw_block_lines: Default flag if version_options is None
             block_line_color: Color for block lines (hex format)
             split_count: Number of parts to split the image into
             web_tile_size: Size of web tiles (e.g., 512×512)
-            include_lines_version: Whether to include versions with lines
-            include_no_lines_version: Whether to include versions without lines
             algorithm_name: Name of the algorithm used to process the image
+            version_options: Dictionary specifying which line versions to export (no_lines, block_lines, chunk_lines, both_lines)
+            include_lines_version: Deprecated - use version_options instead
+            include_no_lines_version: Deprecated - use version_options instead
 
         Returns:
-            Dictionary containing the export results
+            Dictionary containing the export results consolidated into a single structure.
         """
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        export_name = (
-            f"{base_name}_{algorithm_name}_{timestamp}"
-            if algorithm_name
-            else f"{base_name}_{timestamp}"
-        )
-
-        # Create export directory - directly in the output_dir rather than in exports/
-        export_dir = os.path.join(self.output_dir, export_name)
-        os.makedirs(export_dir, exist_ok=True)
+        # Use self.output_dir directly as the base export directory
+        export_dir = self.output_dir
+        os.makedirs(export_dir, exist_ok=True)  # Ensure root task dir exists
 
         # Export in the specified formats
         if export_types is None:
-            export_types = [EXPORT_TYPE_LARGE]
+            export_types = [
+                EXPORT_TYPE_LARGE
+            ]  # Default to large export if none specified
 
         # Calculate offset information
         offset_info = calculate_image_offset(origin_x, origin_z)
 
         results = {
-            "export_dir": export_dir,
-            "timestamp": timestamp,
+            "export_dir": str(export_dir),  # Store the root task dir path
+            "timestamp": datetime.datetime.now().isoformat(),  # Use ISO format timestamp
             "coordinates": offset_info,
             "exports": {},
+            "export_files": [],  # List to track all generated files for metadata
         }
+
+        # --- Determine which line versions to generate based on version_options ---
+        versions_to_generate = {}  # Key: folder_name, Value: (apply_chunk, apply_block)
+        if version_options:
+            if version_options.get("no_lines"):
+                versions_to_generate["no_lines"] = (False, False)
+            if version_options.get("only_block_lines"):
+                versions_to_generate["block_lines"] = (False, True)
+            if version_options.get("only_chunk_lines"):
+                versions_to_generate["chunk_lines"] = (True, False)
+            if version_options.get("both_lines"):
+                versions_to_generate["both_lines"] = (True, True)
+        else:
+            # Fallback to old flags if version_options not provided or empty
+            # Use provided include_ flags if they are not None, otherwise default to True/False
+            _include_lines = (
+                include_lines_version if include_lines_version is not None else True
+            )
+            _include_no_lines = (
+                include_no_lines_version
+                if include_no_lines_version is not None
+                else False
+            )
+
+            if _include_no_lines:
+                versions_to_generate["no_lines"] = (False, False)
+            if _include_lines:
+                # Determine which specific line version based on draw flags
+                if draw_chunk_lines and draw_block_lines:
+                    versions_to_generate["both_lines"] = (True, True)
+                elif draw_chunk_lines:
+                    versions_to_generate["chunk_lines"] = (True, False)
+                elif draw_block_lines:
+                    versions_to_generate["block_lines"] = (False, True)
+                else:
+                    versions_to_generate["no_lines"] = (
+                        False,
+                        False,
+                    )  # Lines included, but none specified
+
+        # Ensure at least one version is generated if none specified or derived
+        if not versions_to_generate:
+            versions_to_generate["no_lines"] = (False, False)  # Default to no_lines
 
         # Export each requested format
         for export_type in export_types:
@@ -109,17 +152,30 @@ class ExportManager:
 
                 # Web exports never have lines
                 web_dir = os.path.join(export_dir, "web")
-                os.makedirs(web_dir, exist_ok=True)
+                # os.makedirs(web_dir, exist_ok=True) # web_export handles this
 
                 # Export tiles using the simplified structure
                 web_result = export_web_tiles(
                     image,
-                    web_dir,
+                    web_dir,  # Pass the web subdirectory path
                     tile_size=web_tile_size,
                     origin_x=origin_x,
                     origin_z=origin_z,
                 )
                 results["exports"]["web"] = web_result
+                # Add web files to the list
+                results["export_files"].append(
+                    {"path": os.path.join(web_dir, "tile-data.json"), "category": "web"}
+                )
+                for tile_info in web_result.get("tiles", []):
+                    results["export_files"].append(
+                        {
+                            "path": os.path.join(
+                                export_dir, tile_info["filename"]
+                            ),  # Path relative to task dir
+                            "category": "web",
+                        }
+                    )
 
             elif export_type == EXPORT_TYPE_LARGE:
                 # Large single image - organized by line type
@@ -140,21 +196,44 @@ class ExportManager:
                         folder_name = "chunk_lines"
                     elif draw_block_lines:
                         folder_name = "block_lines"
-                    else:
+                    else:  # Default to no_lines if lines requested but none specified
                         folder_name = "no_lines"
+                # If neither version is explicitly requested, default based on line flags
+                elif not include_no_lines_version and not include_lines_version:
+                    if draw_chunk_lines or draw_block_lines:
+                        # Determine folder based on flags if include_lines_version was false
+                        if draw_chunk_lines and draw_block_lines:
+                            folder_name = "both_lines"
+                        elif draw_chunk_lines:
+                            folder_name = "chunk_lines"
+                        elif draw_block_lines:
+                            folder_name = "block_lines"
+                        else:
+                            folder_name = (
+                                "no_lines"  # Should not happen if flags are true
+                            )
+                    else:
+                        folder_name = "no_lines"  # Default if no lines requested at all
 
                 if folder_name:
                     # Create the appropriate subfolder
                     line_type_dir = os.path.join(rendered_dir, folder_name)
                     os.makedirs(line_type_dir, exist_ok=True)
 
-                    if include_no_lines_version and folder_name == "no_lines":
+                    # Define base filename for this version
+                    version_base_name = f"{base_name}_{folder_name}"
+
+                    if folder_name == "no_lines":
                         # Export without lines
-                        file_path = os.path.join(line_type_dir, f"{base_name}.png")
+                        file_path = os.path.join(
+                            line_type_dir, f"{version_base_name}.png"
+                        )
                         image.save(file_path)
                         large_results["no_lines"] = file_path
-
-                    if include_lines_version and folder_name != "no_lines":
+                        results["export_files"].append(
+                            {"path": file_path, "category": f"rendered/{folder_name}"}
+                        )
+                    else:
                         # Apply appropriate lines based on folder name
                         apply_chunk_lines = folder_name in ["chunk_lines", "both_lines"]
                         apply_block_lines = folder_name in ["block_lines", "both_lines"]
@@ -168,9 +247,14 @@ class ExportManager:
                             origin_x=origin_x,
                             origin_z=origin_z,
                         )
-                        file_path = os.path.join(line_type_dir, f"{base_name}.png")
+                        file_path = os.path.join(
+                            line_type_dir, f"{version_base_name}.png"
+                        )
                         with_lines_image.save(file_path)
                         large_results[folder_name] = file_path
+                        results["export_files"].append(
+                            {"path": file_path, "category": f"rendered/{folder_name}"}
+                        )
 
                 results["exports"]["large"] = large_results
 
@@ -198,44 +282,18 @@ class ExportManager:
 
                 split_results = {}
 
-                # Determine line type subfolder based on settings (similar to LARGE export)
-                folder_name = None
-                if include_no_lines_version and not include_lines_version:
-                    folder_name = "no_lines"
-                elif include_lines_version:
-                    if draw_chunk_lines and draw_block_lines:
-                        folder_name = "both_lines"
-                    elif draw_chunk_lines:
-                        folder_name = "chunk_lines"
-                    elif draw_block_lines:
-                        folder_name = "block_lines"
-                    else:
-                        folder_name = "no_lines"
-
-                if folder_name:
-                    # Create the appropriate subfolder
+                for folder_name, (
+                    apply_chunk_lines,
+                    apply_block_lines,
+                ) in versions_to_generate.items():
                     line_type_dir = os.path.join(rendered_dir, folder_name)
                     os.makedirs(line_type_dir, exist_ok=True)
+                    version_base_name = f"{base_name}_{folder_name}"
 
-                    if include_no_lines_version and folder_name == "no_lines":
-                        # Split without lines
-                        no_lines_paths = split_image(
-                            image,
-                            line_type_dir,
-                            base_name,
-                            split_count,
-                            texture_manager=texture_manager,
-                            use_simplified_naming=True,
-                        )
-                        split_results["no_lines"] = no_lines_paths
-
-                    if include_lines_version and folder_name != "no_lines":
-                        # Apply appropriate lines based on folder name
-                        apply_chunk_lines = folder_name in ["chunk_lines", "both_lines"]
-                        apply_block_lines = folder_name in ["block_lines", "both_lines"]
-
-                        # Apply lines to the image
-                        with_lines_image = apply_lines_to_image(
+                    if folder_name == "no_lines":
+                        image_to_split = image
+                    else:
+                        image_to_split = apply_lines_to_image(
                             image,
                             draw_chunk_lines=apply_chunk_lines,
                             chunk_line_color=chunk_line_color,
@@ -245,23 +303,43 @@ class ExportManager:
                             origin_z=origin_z,
                         )
 
-                        # Split the image with lines
-                        with_lines_paths = split_image(
-                            with_lines_image,
-                            line_type_dir,
-                            base_name,
-                            split_count,
-                            texture_manager=texture_manager,
-                            use_simplified_naming=True,
+                    split_paths = split_image(
+                        image_to_split,
+                        line_type_dir,
+                        version_base_name,  # Use versioned base name
+                        split_count,
+                        texture_manager=texture_manager,
+                        use_simplified_naming=True,
+                    )
+                    split_results[folder_name] = split_paths
+                    for p in split_paths:
+                        results["export_files"].append(
+                            {"path": p, "category": f"rendered/{folder_name}"}
                         )
-                        split_results[folder_name] = with_lines_paths
 
                 results["exports"]["split"] = split_results
 
-        # Save metadata
+        # Save metadata directly in the root output directory
         metadata_path = os.path.join(export_dir, "export_metadata.json")
-        with open(metadata_path, "w") as f:
-            json.dump(results, f, indent=2)
+        try:
+            # Attempt to make the results JSON serializable
+            serializable_results = json.loads(json.dumps(results, default=str))
+            with open(metadata_path, "w") as f:
+                json.dump(serializable_results, f, indent=2)
+            results["export_files"].append(
+                {"path": metadata_path, "category": "metadata"}
+            )
+        except TypeError as e:
+            import logging
+
+            logging.error(f"Failed to serialize export metadata: {e}")
+            # Optionally save a simplified version or log the error more prominently
+            simplified_results = {
+                "error": "Failed to serialize full metadata",
+                "details": str(e),
+            }
+            with open(metadata_path, "w") as f:
+                json.dump(simplified_results, f, indent=2)
 
         return results
 
@@ -272,23 +350,33 @@ def export_processed_image(
     export_types=None,
     origin_x=0,
     origin_z=0,
-    draw_chunk_lines=False,
+    draw_chunk_lines=False,  # Default flag, used if version_options is None
     chunk_line_color="FF0000FF",
-    draw_block_lines=False,
+    draw_block_lines=False,  # Default flag, used if version_options is None
     block_line_color="CCCCCC88",
     split_count=4,
     web_tile_size=512,
-    include_lines_version=True,
-    include_no_lines_version=False,
     algorithm_name="",
     output_dir="./out",
-    version_options=None,
+    version_options=None,  # Preferred way to specify line versions
 ):
     """
-    Convenience function for exporting processed images.
+    Convenience function for exporting processed images. Handles multiple line versions.
 
     Args:
-        (Same as ExportManager.export_image)
+        image: PIL Image to export
+        base_name: Base name for the exported files
+        export_types: List of export types (web, large, split) or None to export all
+        origin_x: X-coordinate of the world origin
+        origin_z: Z-coordinate of the world origin
+        draw_chunk_lines: Default flag if version_options is None
+        chunk_line_color: Color for chunk lines (hex format)
+        draw_block_lines: Default flag if version_options is None
+        block_line_color: Color for block lines (hex format)
+        split_count: Number of parts to split the image into
+        web_tile_size: Size of web tiles (e.g., 512×512)
+        algorithm_name: Name of the algorithm used to process the image
+        output_dir: Base directory for output files (should be the task root)
         version_options: Dictionary containing options for different versions of line rendering
             - no_lines: Export version with no lines
             - only_block_lines: Export version with only block grid lines
@@ -296,151 +384,29 @@ def export_processed_image(
             - both_lines: Export version with both block and chunk lines
 
     Returns:
-        Dictionary containing the export results
+        Dictionary containing the export results consolidated into a single structure.
     """
     manager = ExportManager(output_dir=output_dir)
-    export_results = {}
 
-    # Process all requested line versions
-    if version_options:
-        # Export with no lines if requested
-        if version_options.get("no_lines", False):
-            no_lines_result = manager.export_image(
-                image,
-                f"{base_name}_no_lines",
-                export_types=export_types,
-                origin_x=origin_x,
-                origin_z=origin_z,
-                draw_chunk_lines=False,
-                chunk_line_color=chunk_line_color,
-                draw_block_lines=False,
-                block_line_color=block_line_color,
-                split_count=split_count,
-                web_tile_size=web_tile_size,
-                include_lines_version=False,
-                include_no_lines_version=True,
-                algorithm_name=algorithm_name,
-            )
-            export_results["no_lines"] = no_lines_result
+    # Call export_image once, passing version_options to handle line variations internally
+    export_result = manager.export_image(
+        image,
+        base_name,  # Pass the original base_name
+        export_types=export_types,
+        origin_x=origin_x,
+        origin_z=origin_z,
+        # Pass default flags for fallback if version_options is None
+        draw_chunk_lines=draw_chunk_lines,
+        chunk_line_color=chunk_line_color,
+        draw_block_lines=draw_block_lines,
+        block_line_color=block_line_color,
+        split_count=split_count,
+        web_tile_size=web_tile_size,
+        # Pass version_options directly
+        version_options=version_options,
+        # Deprecated flags are no longer needed here, handled by fallback in export_image
+        algorithm_name=algorithm_name,
+    )
 
-        # Export with only block lines
-        if version_options.get("only_block_lines", False):
-            block_lines_result = manager.export_image(
-                image,
-                f"{base_name}_block_lines",
-                export_types=export_types,
-                origin_x=origin_x,
-                origin_z=origin_z,
-                draw_chunk_lines=False,
-                chunk_line_color=chunk_line_color,
-                draw_block_lines=True,
-                block_line_color=block_line_color,
-                split_count=split_count,
-                web_tile_size=web_tile_size,
-                include_lines_version=True,
-                include_no_lines_version=False,
-                algorithm_name=algorithm_name,
-            )
-            export_results["block_lines"] = block_lines_result
-
-        # Export with only chunk lines
-        if version_options.get("only_chunk_lines", False):
-            chunk_lines_result = manager.export_image(
-                image,
-                f"{base_name}_chunk_lines",
-                export_types=export_types,
-                origin_x=origin_x,
-                origin_z=origin_z,
-                draw_chunk_lines=True,
-                chunk_line_color=chunk_line_color,
-                draw_block_lines=False,
-                block_line_color=block_line_color,
-                split_count=split_count,
-                web_tile_size=web_tile_size,
-                include_lines_version=True,
-                include_no_lines_version=False,
-                algorithm_name=algorithm_name,
-            )
-            export_results["chunk_lines"] = chunk_lines_result
-
-        # Export with both line types
-        if version_options.get("both_lines", False):
-            both_lines_result = manager.export_image(
-                image,
-                f"{base_name}_both_lines",
-                export_types=export_types,
-                origin_x=origin_x,
-                origin_z=origin_z,
-                draw_chunk_lines=True,
-                chunk_line_color=chunk_line_color,
-                draw_block_lines=True,
-                block_line_color=block_line_color,
-                split_count=split_count,
-                web_tile_size=web_tile_size,
-                include_lines_version=True,
-                include_no_lines_version=False,
-                algorithm_name=algorithm_name,
-            )
-            export_results["both_lines"] = both_lines_result
-
-        # If no specific options were selected, use the fallback approach
-        if not export_results:
-            return_result = manager.export_image(
-                image,
-                base_name,
-                export_types=export_types,
-                origin_x=origin_x,
-                origin_z=origin_z,
-                draw_chunk_lines=draw_chunk_lines,
-                chunk_line_color=chunk_line_color,
-                draw_block_lines=draw_block_lines,
-                block_line_color=block_line_color,
-                split_count=split_count,
-                web_tile_size=web_tile_size,
-                include_lines_version=include_lines_version,
-                include_no_lines_version=include_no_lines_version,
-                algorithm_name=algorithm_name,
-            )
-            return return_result
-
-        # Combine and return all results
-        if len(export_results) == 1:
-            return list(export_results.values())[0]
-
-        # Combine multiple export results
-        combined_result = {
-            "export_dir": next(iter(export_results.values()))["export_dir"],
-            "timestamp": next(iter(export_results.values()))["timestamp"],
-            "coordinates": next(iter(export_results.values()))["coordinates"],
-            "version_exports": export_results,
-        }
-        return combined_result
-
-    # Legacy path when no version_options are provided
-    else:
-        # Log the export settings
-        import logging
-
-        logging.info(
-            f"Exporting image with settings: draw_chunk_lines={draw_chunk_lines}, "
-            f"draw_block_lines={draw_block_lines}, "
-            f"include_lines_version={include_lines_version}, "
-            f"include_no_lines_version={include_no_lines_version}"
-        )
-
-        return manager.export_image(
-            image,
-            base_name,
-            export_types=export_types,
-            origin_x=origin_x,
-            origin_z=origin_z,
-            draw_chunk_lines=draw_chunk_lines,
-            chunk_line_color=chunk_line_color,
-            draw_block_lines=draw_block_lines,
-            block_line_color=block_line_color,
-            split_count=split_count,
-            web_tile_size=web_tile_size,
-            include_lines_version=include_lines_version,
-            include_no_lines_version=include_no_lines_version,
-            algorithm_name=algorithm_name,
-        )
+    # The result from export_image already contains all generated versions
+    return export_result

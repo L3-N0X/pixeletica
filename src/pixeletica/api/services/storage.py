@@ -43,23 +43,8 @@ def ensure_task_directory(task_id: str) -> Path:
     """
     task_dir = TASKS_DIR / task_id
 
-    # Create task directory if it doesn't exist
+    # Only create the root task directory; subfolders are created as needed by export logic
     task_dir.mkdir(parents=True, exist_ok=True)
-
-    # Create subdirectories for different types of files
-    (task_dir / "input").mkdir(exist_ok=True)
-    (task_dir / "dithered").mkdir(exist_ok=True)
-    (task_dir / "rendered").mkdir(exist_ok=True)
-    # Create rendered subdirectories for different line types
-    (task_dir / "rendered" / "no_lines").mkdir(parents=True, exist_ok=True)
-    (task_dir / "rendered" / "block_lines").mkdir(parents=True, exist_ok=True)
-    (task_dir / "rendered" / "chunk_lines").mkdir(parents=True, exist_ok=True)
-    (task_dir / "rendered" / "both_lines").mkdir(parents=True, exist_ok=True)
-    (task_dir / "schematic").mkdir(exist_ok=True)
-    (task_dir / "web").mkdir(exist_ok=True)
-    # Create tiles directory in web for the simplified structure
-    (task_dir / "web" / "tiles").mkdir(parents=True, exist_ok=True)
-    (task_dir / "metadata").mkdir(exist_ok=True)
 
     return task_dir
 
