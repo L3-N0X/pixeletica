@@ -325,8 +325,13 @@ def save_base64_image(task_id: str, image_data: str, filename: str) -> Path:
         logger.error(f"Failed to decode base64 image for task {task_id}: {e}")
         raise ValueError(f"Invalid base64 image data: {str(e)}")
 
-    # Save the image to the input directory
+    # Define the image path within the input directory
     image_path = task_dir / "input" / filename
+
+    # Ensure the parent directory exists
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Save the image
     with open(image_path, "wb") as f:
         f.write(image_bytes)
 
