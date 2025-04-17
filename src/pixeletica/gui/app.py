@@ -150,7 +150,7 @@ class DitherApp:
         self.photo_img = None  # To keep reference to prevent garbage collection
 
         # Load block colors
-        if load_block_colors("./src/minecraft/block-colors.csv"):
+        if load_block_colors("./src/minecraft/block-colors-2025.csv"):
             self.status_var.set(
                 f"Ready - Loaded {len(get_block_colors())} Minecraft block colors"
             )

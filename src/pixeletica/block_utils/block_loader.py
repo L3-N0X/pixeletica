@@ -58,7 +58,7 @@ def load_block_colors(csv_path):
                     row_count += 1
 
         loaded_csv_path = csv_path
-        logger.warning(f"Loaded {len(block_colors)} block colors from {csv_path}")
+        logger.info(f"Loaded {len(block_colors)} block colors from {csv_path}")
 
         # Verify colors are available through get_block_colors()
         verify_colors = get_block_colors()

@@ -17,11 +17,18 @@ from celery import Celery, states
 from celery.result import AsyncResult
 
 from src.pixeletica.api.models import TaskStatus
+
+# Imports are already correct from the reverted state, no change needed here.
+# Keeping this block for structure, but the content is identical.
 from src.pixeletica.api.services import storage
-from src.pixeletica.dithering import get_algorithm_by_name
+from src.pixeletica.dithering import (
+    get_algorithm_by_name,
+)  # Keep for algorithm_id lookup
 from src.pixeletica.export.export_manager import export_processed_image
 from src.pixeletica.image_ops import load_image, resize_image
-from src.pixeletica.rendering.block_renderer import render_blocks_from_block_ids
+from src.pixeletica.processing.converter import (
+    process_image_to_blocks,
+)  # Import the new function
 from src.pixeletica.schematic_generator import generate_schematic
 
 # Set up logging immediately to capture all initialization
@@ -97,7 +104,15 @@ def sync_task_state(task_id: str, celery_id: Optional[str] = None) -> Dict:
                 if redis_state == states.SUCCESS:
                     metadata["status"] = TaskStatus.COMPLETED.value
                     metadata["progress"] = 100
-                    metadata["completedAt"] = datetime.now().isoformat()
+                    # Use completion time from Redis if available and valid
+                    completion_time_redis = result.date_done
+                    if completion_time_redis and isinstance(
+                        completion_time_redis, datetime
+                    ):
+                        metadata["completedAt"] = completion_time_redis.isoformat()
+                    elif "completedAt" not in metadata:  # Set only if not already set
+                        metadata["completedAt"] = datetime.now().isoformat()
+
                 elif redis_state == states.FAILURE:
                     metadata["status"] = TaskStatus.FAILED.value
                     metadata["error"] = (
@@ -105,8 +120,14 @@ def sync_task_state(task_id: str, celery_id: Optional[str] = None) -> Dict:
                     )
                     metadata["traceback"] = redis_traceback
                 elif redis_state == states.STARTED:
-                    metadata["status"] = TaskStatus.PROCESSING.value
+                    # Only update to PROCESSING if not already finished
+                    if metadata["status"] not in [
+                        TaskStatus.COMPLETED.value,
+                        TaskStatus.FAILED.value,
+                    ]:
+                        metadata["status"] = TaskStatus.PROCESSING.value
                 elif redis_state == states.PENDING:
+                    # Only update to QUEUED if not already started or finished
                     if metadata["status"] not in [
                         TaskStatus.PROCESSING.value,
                         TaskStatus.COMPLETED.value,
@@ -280,42 +301,36 @@ def get_task_status(task_id: str, bypass_cache: bool = False) -> Optional[Dict]:
     if celery_id:
         metadata = sync_task_state(task_id, celery_id)
 
-    # Check for stuck tasks
-    if metadata.get("status") == TaskStatus.QUEUED.value:
+    # Check for stuck tasks (only if not already completed or failed)
+    current_status = metadata.get("status")
+    if current_status not in [TaskStatus.COMPLETED.value, TaskStatus.FAILED.value]:
+        now = datetime.now()
         try:
-            created_time = datetime.fromisoformat(metadata.get("created", ""))
-            now = datetime.now()
-            queue_time = (now - created_time).total_seconds()
+            if current_status == TaskStatus.QUEUED.value:
+                created_time = datetime.fromisoformat(metadata.get("created", ""))
+                queue_time = (now - created_time).total_seconds()
+                if queue_time > 300:  # 5 minutes
+                    logger.warning(
+                        f"Task {task_id} timed out in queue ({queue_time:.1f}s)"
+                    )
+                    metadata["status"] = TaskStatus.FAILED.value
+                    metadata["error"] = "Task timed out in queue"
+                    metadata["updated"] = now.isoformat()
+                    storage.save_task_metadata(task_id, metadata, force=True)
 
-            # If task has been queued for over 5 minutes, mark as failed
-            if queue_time > 300:  # 5 minutes
-                logger.warning(
-                    f"Task {task_id} has been queued for {queue_time:.1f} seconds, marking as failed"
-                )
-                metadata["status"] = TaskStatus.FAILED.value
-                metadata["error"] = "Task timed out in queue"
-                metadata["updated"] = datetime.now().isoformat()
-                storage.save_task_metadata(task_id, metadata, force=True)
+            elif current_status == TaskStatus.PROCESSING.value:
+                updated_time = datetime.fromisoformat(metadata.get("updated", ""))
+                processing_time = (now - updated_time).total_seconds()
+                if processing_time > 600:  # 10 minutes without update
+                    logger.warning(
+                        f"Task {task_id} timed out during processing ({processing_time:.1f}s)"
+                    )
+                    metadata["status"] = TaskStatus.FAILED.value
+                    metadata["error"] = "Task processing timed out"
+                    metadata["updated"] = now.isoformat()
+                    storage.save_task_metadata(task_id, metadata, force=True)
         except (ValueError, TypeError) as e:
-            logger.error(f"Error checking queued time: {e}")
-
-    elif metadata.get("status") == TaskStatus.PROCESSING.value:
-        try:
-            updated_time = datetime.fromisoformat(metadata.get("updated", ""))
-            now = datetime.now()
-            processing_time = (now - updated_time).total_seconds()
-
-            # If no update in 10 minutes while processing, mark as failed
-            if processing_time > 600:  # 10 minutes
-                logger.warning(
-                    f"Task {task_id} has been processing without updates for {processing_time:.1f} seconds, marking as failed"
-                )
-                metadata["status"] = TaskStatus.FAILED.value
-                metadata["error"] = "Task processing timed out"
-                metadata["updated"] = datetime.now().isoformat()
-                storage.save_task_metadata(task_id, metadata, force=True)
-        except (ValueError, TypeError) as e:
-            logger.error(f"Error checking processing time: {e}")
+            logger.error(f"Error checking task timeout for {task_id}: {e}")
 
     return metadata
 
@@ -325,97 +340,121 @@ def update_task_status(
     status: Union[str, TaskStatus],
     progress: Optional[int] = None,
     error: Optional[str] = None,
+    traceback: Optional[str] = None,  # Added traceback
+    current_step: Optional[str] = None,  # Added current_step
 ) -> Dict:
     """
-    Update the status of a task.
+    Update the status of a task, saving to storage and potentially Redis.
 
     Args:
         task_id: Task identifier
-        status: New task status
+        status: New task status (TaskStatus enum or string)
         progress: Optional progress percentage (0-100)
         error: Optional error message if task failed
+        traceback: Optional traceback string if task failed
+        current_step: Optional name of the current processing step
 
     Returns:
-        Updated task metadata
+        Updated task metadata dictionary
     """
-    logger.info(f"Updating task {task_id} status to {status} (progress: {progress})")
+    status_value = status.value if isinstance(status, TaskStatus) else status
+    logger.info(
+        f"Updating task {task_id} status to {status_value} (Progress: {progress}, Step: {current_step})"
+    )
     metadata = storage.load_task_metadata(task_id, bypass_cache=True)
 
     if metadata is None:
-        # Create new metadata if it doesn't exist
+        logger.warning(
+            f"Metadata not found for task {task_id} during update. Creating."
+        )
         metadata = {
             "taskId": task_id,
-            "status": status if isinstance(status, str) else status.value,
             "created": datetime.now().isoformat(),
-            "updated": datetime.now().isoformat(),
         }
-    else:
-        # Update existing metadata
-        metadata["status"] = status if isinstance(status, str) else status.value
-        metadata["updated"] = datetime.now().isoformat()
 
+    # Update fields
+    metadata["status"] = status_value
+    metadata["updated"] = datetime.now().isoformat()
     if progress is not None:
         metadata["progress"] = progress
-
+    if current_step is not None:
+        metadata["currentStep"] = current_step  # Store the current step name
     if error is not None:
         metadata["error"] = error
+    if traceback is not None:
+        metadata["traceback"] = traceback
+    if status_value == TaskStatus.COMPLETED.value and "completedAt" not in metadata:
+        metadata["completedAt"] = metadata["updated"]  # Set completion time
 
-    # Save updated metadata with force=True to ensure it's written
+    # Save updated metadata to storage (always force write for updates)
     storage.save_task_metadata(task_id, metadata, force=True)
 
-    # If we have a celery_id, update the Redis state too
+    # --- Update Redis State (Best Effort) ---
     celery_id = metadata.get("celery_id") or metadata.get("celery_task_id")
     if celery_id:
         try:
-            # Map our task states to Celery states
-            status_str = metadata["status"]
-            if status_str == TaskStatus.COMPLETED.value:
+            celery_state = states.PENDING  # Default
+            celery_result = None
+
+            if status_value == TaskStatus.COMPLETED.value:
                 celery_state = states.SUCCESS
                 celery_result = {
                     "taskId": task_id,
                     "status": "completed",
                     "message": "Task completed successfully",
+                    "results": metadata.get("results"),  # Include results if available
                 }
-            elif status_str == TaskStatus.FAILED.value:
+            elif status_value == TaskStatus.FAILED.value:
                 celery_state = states.FAILURE
-                celery_result = {
-                    "taskId": task_id,
-                    "status": "failed",
-                    "error": metadata.get("error", "Unknown error"),
-                }
-            elif status_str == TaskStatus.PROCESSING.value:
+                celery_result = Exception(
+                    metadata.get("error", "Unknown error")
+                )  # Store error as exception for Celery
+            elif status_value == TaskStatus.PROCESSING.value:
                 celery_state = states.STARTED
-                celery_result = {
+                celery_result = {  # Use meta field for progress/step
                     "taskId": task_id,
                     "status": "processing",
                     "progress": metadata.get("progress", 0),
+                    "currentStep": metadata.get("currentStep", None),
                 }
-            else:
-                celery_state = states.PENDING
-                celery_result = None
 
-            # Update Redis directly if needed
-            import redis
+            # Use Celery's update_state for better integration
+            task = celery_app.AsyncResult(celery_id)
+            task.backend.store_result(
+                celery_id,
+                result=celery_result,
+                state=celery_state,
+                traceback=metadata.get("traceback")
+                if celery_state == states.FAILURE
+                else None,
+                request=task.request,  # Pass request context if available
+                # meta=celery_result if celery_state == states.STARTED else None # Store progress in meta
+            )
 
-            r = redis.Redis.from_url(redis_url)
-            task_key = f"celery-task-meta-{celery_id}"
-            task_data = {
-                "status": celery_state,
-                "result": celery_result,
-                "traceback": None,
-                "children": [],
-                "date_done": (
-                    datetime.now().isoformat()
-                    if celery_state in [states.SUCCESS, states.FAILURE]
-                    else None
-                ),
-            }
-            r.set(task_key, json.dumps(task_data))
+            # # Alternative: Direct Redis update (less recommended)
+            # import redis
+            # r = redis.Redis.from_url(redis_url)
+            # task_key = f"celery-task-meta-{celery_id}"
+            # task_data = {
+            #     "status": celery_state,
+            #     "result": celery_result, # Needs careful serialization if Exception
+            #     "traceback": metadata.get("traceback") if celery_state == states.FAILURE else None,
+            #     "children": [],
+            #     "date_done": (
+            #         metadata.get("completedAt")
+            #         if celery_state in [states.SUCCESS, states.FAILURE]
+            #         else None
+            #     ),
+            #     # Add custom meta if needed
+            #     "meta": celery_result if celery_state == states.STARTED else None
+            # }
+            # r.set(task_key, json.dumps(task_data, default=str)) # Use default=str for Exception
+
             logger.info(
-                f"Updated Redis state for task {task_id} (celery_id={celery_id}) to {celery_state}"
+                f"Updated Celery backend state for task {task_id} (celery_id={celery_id}) to {celery_state}"
             )
         except Exception as e:
-            logger.error(f"Failed to update Redis for task {task_id}: {e}")
+            logger.error(f"Failed to update Celery backend for task {task_id}: {e}")
 
     return metadata
 
@@ -450,26 +489,51 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
     # Ensure the task directory exists
     storage.ensure_task_directory(task_id)
 
-    # Synchronize task state
+    # Synchronize task state at the beginning
     sync_result = sync_task_state(task_id, celery_id)
     if not sync_result:
         logger.error(f"Failed to synchronize task {task_id} at start")
+        # Attempt to mark as failed even if sync failed initially
+        update_task_status(
+            task_id, TaskStatus.FAILED, error="Task synchronization failed at start"
+        )
         return {
             "taskId": task_id,
             "status": TaskStatus.FAILED.value,
-            "error": "Task synchronization failed",
+            "error": "Task synchronization failed at start",
         }
+
+    # Check if task was already completed or failed during sync
+    if sync_result.get("status") in [
+        TaskStatus.COMPLETED.value,
+        TaskStatus.FAILED.value,
+    ]:
+        logger.warning(
+            f"Task {task_id} already in terminal state ({sync_result.get('status')}). Skipping processing."
+        )
+        return {
+            "taskId": task_id,
+            "status": sync_result.get("status"),
+            "message": "Task already completed or failed.",
+            "error": sync_result.get("error"),
+        }
+
+    metadata = sync_result  # Use the synchronized metadata
 
     try:
         # Define the total number of steps in the process for accurate progress tracking
-        # Each step represents a major operation in the task progress
         steps = {
             "initialization": {"weight": 5, "completed": False},
             "loading_image": {"weight": 5, "completed": False},
             "resizing_image": {"weight": 10, "completed": False},
-            "applying_dither": {"weight": 25, "completed": False},
-            "saving_dithered": {"weight": 10, "completed": False},
-            "rendering_blocks": {"weight": 15, "completed": False},
+            "processing_image": {
+                "weight": 50,
+                "completed": False,
+            },  # Combined dither+render
+            "saving_outputs": {
+                "weight": 10,
+                "completed": False,
+            },  # Saving dithered/rendered
             "exporting": {"weight": 15, "completed": False},
             "generating_schematic": {"weight": 10, "completed": False},
             "creating_archive": {"weight": 5, "completed": False},
@@ -477,202 +541,150 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
 
         # Function to calculate and update current progress
         def update_progress(step_name, sub_progress=100):
+            nonlocal metadata  # Allow modification of the outer metadata dict
             if step_name not in steps:
+                logger.warning(f"Unknown progress step: {step_name}")
                 return
 
-            # Mark this step as completed
-            steps[step_name]["completed"] = True
+            # Mark step as completed only when sub_progress is 100 or more
+            if sub_progress >= 100:
+                steps[step_name]["completed"] = True
 
-            # Calculate total progress
+            # Calculate total progress based on completed steps and current sub-progress
             completed_weight = sum(
-                step["weight"] for step_name, step in steps.items() if step["completed"]
-            )
-            current_weight = (
-                steps[step_name]["weight"] * (sub_progress / 100)
-                if sub_progress < 100
-                else 0
+                step["weight"] for name, step in steps.items() if step["completed"]
             )
 
-            total_progress = int(completed_weight + current_weight)
+            # Calculate contribution from the current step's sub-progress, only if not yet completed
+            current_step_contribution = 0
+            if not steps[step_name]["completed"]:
+                current_step_weight = steps[step_name]["weight"]
+                current_step_contribution = current_step_weight * (
+                    min(sub_progress, 100) / 100.0
+                )
+                # Find weights of *other* completed steps
+                other_completed_weight = sum(
+                    step["weight"]
+                    for name, step in steps.items()
+                    if step["completed"] and name != step_name
+                )
+                total_progress = other_completed_weight + current_step_contribution
+            else:
+                # If step is marked complete, use the sum of weights of all completed steps
+                total_progress = completed_weight
 
-            # Ensure progress stays within 0-100 range
-            total_progress = max(0, min(100, total_progress))
+            total_progress = int(round(total_progress))  # Round to nearest int
+            total_progress = max(0, min(100, total_progress))  # Clamp to 0-100
 
-            # Update task status with calculated progress
-            update_task_status(task_id, TaskStatus.PROCESSING, progress=total_progress)
-
-            # Log the progress update
+            # Update task status via the dedicated function
+            metadata = update_task_status(  # Update the outer metadata variable
+                task_id,
+                TaskStatus.PROCESSING,
+                progress=total_progress,
+                current_step=step_name,
+            )
             logger.info(
-                f"Task {task_id} progress: {total_progress}% (Step: {step_name}, Sub-progress: {sub_progress}%)"
+                f"Task {task_id} progress: {total_progress}% (Step: {step_name}, Sub: {sub_progress}%)"
             )
 
-        # Update task status to processing
-        update_progress("initialization")
+        # --- Start Processing ---
+        update_progress("initialization")  # Progress: 5%
 
-        # Load task metadata
-        metadata = storage.load_task_metadata(task_id, bypass_cache=True)
-        if not metadata:
-            raise ValueError(f"Task metadata not found for task {task_id}")
-
-        # Log metadata keys to help debug
         logger.info(f"Task {task_id} metadata keys: {list(metadata.keys())}")
+        config = metadata.get("config", metadata)  # Ensure consistent config access
 
-        # Ensure consistent config access
-        if "config" in metadata:
-            config = metadata["config"]
-        else:
-            config = metadata
-
-        # Try to find the input image path
         input_image_path = metadata.get("inputImagePath")
         if not input_image_path:
             raise ValueError("Input image path not found in task metadata")
 
         # Load the image
-        update_progress("loading_image")
+        update_progress("loading_image")  # Progress: 10%
         original_img = load_image(input_image_path)
         if not original_img:
             raise ValueError(f"Failed to load image from {input_image_path}")
 
-        # Resize image if dimensions provided
+        # Resize image
         target_width = config.get("width")
         target_height = config.get("height")
-
         if target_width or target_height:
-            update_progress("resizing_image", 50)  # Start of resize operation
+            update_progress("resizing_image", 50)  # Start resize
             resized_img = resize_image(original_img, target_width, target_height)
-            update_progress("resizing_image")  # Resize complete
+            update_progress("resizing_image")  # Resize complete (Progress: 20%)
         else:
             resized_img = original_img
-            update_progress("resizing_image")  # Skip resize but mark as complete
+            update_progress("resizing_image")  # Skip resize (Progress: 20%)
 
-        # Apply dithering algorithm
-        update_progress("applying_dither", 10)  # Start of dithering (10% complete)
+        # --- Process Image using Shared Converter ---
+        update_progress("processing_image", 0)  # Mark start (Progress: 20%)
         algorithm_name = config.get("algorithm", "floyd_steinberg")
-        dither_func, algorithm_id = get_algorithm_by_name(algorithm_name)
-
-        if not dither_func:
-            raise ValueError(f"Unknown dithering algorithm: {algorithm_name}")
-
-        # Load block colors before applying dithering
-        from src.pixeletica.block_utils.block_loader import load_block_colors
-
-        # Determine color palette - default to minecraft-2025 if not specified
         color_palette = config.get("color_palette", "minecraft")
+        _, algorithm_id = get_algorithm_by_name(algorithm_name)
 
-        # Choose the appropriate CSV file based on color palette
-        if color_palette == "minecraft-2024":
-            csv_path = "./src/minecraft/block-colors-2024.csv"
-        else:
-            # Default to the standard minecraft palette
-            csv_path = "./src/minecraft/block-colors-2025.csv"
+        def processing_progress_callback(sub_progress, step_name):
+            # Scale sub-progress (0-100) to fit within the processing step's weight (50%)
+            # Base progress is 20% (init+load+resize)
+            # Use min(sub_progress, 100) to prevent exceeding 100% for the sub-step
+            current_step_progress = min(sub_progress, 100)
+            # Pass the scaled progress directly to update_progress
+            update_progress("processing_image", current_step_progress)
+            logger.info(f"Task {task_id} sub-step: {step_name} ({sub_progress}%)")
 
-        logger.info(f"Loading block colors from {csv_path}")
-        update_progress(
-            "applying_dither", 50
-        )  # Loading block colors (50% of dithering step)
+        processing_results = process_image_to_blocks(
+            resized_img,
+            algorithm_name,
+            color_palette=color_palette,
+            progress_callback=processing_progress_callback,
+        )
+        # Ensure processing step is marked fully complete
+        update_progress("processing_image", 100)  # Mark complete (Progress: 70%)
 
-        if not load_block_colors(csv_path):
-            raise ValueError(f"Failed to load block colors from {csv_path}")
+        dithered_img = processing_results.get("dithered_image")  # Use .get for safety
+        block_image = processing_results.get("rendered_image")
+        block_ids = processing_results.get("block_ids")
 
-        update_progress(
-            "applying_dither", 75
-        )  # Starting actual dithering (75% of dithering step)
-        # Pass progress_callback if supported (for Floyd-Steinberg)
-        import inspect
-
-        dither_func_params = inspect.signature(dither_func).parameters
-        if "progress_callback" in dither_func_params:
-
-            def dithering_progress_callback(sub_progress):
-                update_progress("applying_dither", 75 + int(sub_progress * 0.25))
-
-            dithered_img, block_ids = dither_func(
-                resized_img, progress_callback=dithering_progress_callback
-            )
-        else:
-            dithered_img, block_ids = dither_func(resized_img)
-        update_progress("applying_dither")  # Dithering complete
-
-        # Save dithered image
-        update_progress("saving_dithered", 50)  # Start saving dithered image
+        # --- Save Dithered and Rendered Images ---
+        update_progress("saving_outputs", 0)  # Start saving (Progress: 70%)
         filename = config.get("filename", "image.png")
         base_name = Path(filename).stem
 
-        # Save dithered image directly
-        dithered_filename = f"{base_name}_dithered.png"
-        dithered_file_info = storage.save_output_file(
-            task_id, dithered_img, dithered_filename, "dithered"
-        )
-
-        # Update metadata with dithered image info
-        metadata["ditheredImage"] = dithered_file_info
-        storage.save_task_metadata(task_id, metadata)
-        update_progress("saving_dithered")  # Saving complete
-
-        # Render blocks with textures
-        update_progress("rendering_blocks", 20)  # Start of rendering
-        try:
-            # Create texture manager with absolute path to ensure consistent loading
-            from src.pixeletica.rendering.texture_loader import (
-                TextureManager,
-                DEFAULT_TEXTURE_PATH,
+        if dithered_img:
+            dithered_filename = f"{base_name}_dithered.png"
+            dithered_file_info = storage.save_output_file(
+                task_id, dithered_img, dithered_filename, "dithered"
             )
+            metadata["ditheredImage"] = dithered_file_info
+        else:
+            logger.warning(f"Dithered image not generated for task {task_id}")
+        update_progress("saving_outputs", 50)  # Dithered saved (Progress: 75%)
 
-            texture_path = os.path.abspath(DEFAULT_TEXTURE_PATH)
-            logger.info(f"Creating TextureManager with absolute path: {texture_path}")
-            texture_manager = TextureManager(texture_path)
-
-            # Render blocks using the configured texture manager
-            def rendering_progress_callback(sub_progress):
-                update_progress("rendering_blocks", sub_progress)
-
-            block_image = render_blocks_from_block_ids(
-                block_ids,
-                texture_manager=texture_manager,
-                progress_callback=rendering_progress_callback,
+        if block_image:
+            rendered_filename = f"{base_name}_rendered.png"
+            rendered_file_info = storage.save_output_file(
+                task_id, block_image, rendered_filename, "rendered"
             )
+            metadata["renderedImage"] = rendered_file_info
+            logger.info(f"Saved rendered block image for task {task_id}")
+        else:
+            logger.error(f"Rendered block image not generated for task {task_id}")
+        # Save metadata potentially updated with image paths
+        storage.save_task_metadata(task_id, metadata, force=True)
+        update_progress("saving_outputs")  # Saving complete (Progress: 80%)
 
-            if block_image:
-                # Save block-rendered image directly
-                rendered_filename = f"{base_name}_rendered.png"
-                rendered_file_info = storage.save_output_file(
-                    task_id, block_image, rendered_filename, "rendered"
+        # --- Exporting ---
+        update_progress("exporting", 0)  # Start exporting (Progress: 80%)
+        export_settings = {}
+        origin_x, origin_y, origin_z = 0, 0, 0  # Default origins
+
+        if block_image:
+            try:
+                export_settings = config.get(
+                    "exportSettings", metadata.get("exportSettings", {})
                 )
-
-                # Update metadata with rendered image info
-                metadata["renderedImage"] = rendered_file_info
-                storage.save_task_metadata(task_id, metadata)
-
-                logger.info(
-                    f"Successfully rendered block image with textures for task {task_id}"
+                version_options = config.get(
+                    "version_options", metadata.get("version_options", {})
                 )
-            else:
-                logger.error(
-                    f"Failed to render block image with textures for task {task_id}"
-                )
+                export_types = config.get("export_types", ["web"]) or ["web"]
 
-                # Process export settings
-                update_progress("exporting", 20)  # Start of export settings processing
-
-                # Extract export settings from various possible locations
-                export_settings = {}
-                if "exportSettings" in config:
-                    export_settings = config["exportSettings"]
-                elif "exportSettings" in metadata:
-                    export_settings = metadata["exportSettings"]
-
-                # Extract version options from config or direct in request_data
-                version_options = config.get("version_options", {})
-                if not version_options and "version_options" in metadata:
-                    version_options = metadata["version_options"]
-
-                # Get export types
-                export_types = config.get("export_types", ["web"])
-                if not export_types:
-                    export_types = ["web"]
-
-                # Export settings from various fields
                 origin_x = export_settings.get("originX", config.get("origin_x", 0))
                 origin_y = export_settings.get("originY", config.get("origin_y", 0))
                 origin_z = export_settings.get("originZ", config.get("origin_z", 0))
@@ -684,14 +696,9 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                     "splitCount", config.get("image_division", 1)
                 )
 
-                # Export processed image with export settings - ensure it's using the shared task directory
                 web_output_dir = str(storage.TASKS_DIR / task_id / "web")
                 logger.info(f"Exporting files to web directory: {web_output_dir}")
-
-                # Ensure the web directory exists and has necessary subdirectories
                 os.makedirs(web_output_dir, exist_ok=True)
-
-                # Create web/rendered directory for compatibility with maps API
                 rendered_dir = os.path.join(web_output_dir, "rendered")
                 os.makedirs(rendered_dir, exist_ok=True)
 
@@ -700,7 +707,7 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                     base_name,
                     export_types=export_types,
                     origin_x=origin_x,
-                    origin_z=origin_z,
+                    origin_z=origin_z,  # Note: origin_y not used by export_processed_image
                     draw_chunk_lines=draw_chunk_lines,
                     chunk_line_color=chunk_line_color,
                     draw_block_lines=draw_block_lines,
@@ -710,53 +717,61 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                     algorithm_name=algorithm_id,
                     output_dir=web_output_dir,
                 )
-
                 logger.info(f"Export results: {export_results}")
-
-                # Update metadata with export results
                 metadata["exports"] = export_results
-                storage.save_task_metadata(task_id, metadata)
+                storage.save_task_metadata(
+                    task_id, metadata, force=True
+                )  # Save after export results
 
-                # Import exported files to task storage
                 if "export_files" in export_results:
-                    for export_file in export_results["export_files"]:
+                    for file_info in export_results["export_files"]:
                         try:
-                            file_path = Path(export_file)
+                            file_path = Path(file_info["path"])
+                            category = file_info.get("category", "web")
                             if file_path.exists():
                                 with open(file_path, "rb") as f:
                                     file_data = f.read()
-
                                 storage.save_output_file(
-                                    task_id, file_data, file_path.name, "web"
+                                    task_id, file_data, file_path.name, category
                                 )
-                        except Exception as e:
+                        except Exception as e_import:
                             logger.error(
-                                f"Failed to import export file {export_file}: {e}"
+                                f"Failed to import export file {file_info.get('path')}: {e_import}"
                             )
 
-                update_progress("exporting")  # Export complete
-        except Exception as e:
-            logger.error(f"Error during rendering or export for task {task_id}: {e}")
-            # Continue processing even if rendering fails
+            except Exception as e_export:
+                logger.error(
+                    f"Error during export for task {task_id}: {e_export}", exc_info=True
+                )
+                metadata["exportError"] = str(e_export)
+                storage.save_task_metadata(
+                    task_id, metadata, force=True
+                )  # Save error to metadata
+        else:
+            logger.warning(
+                f"Skipping export for task {task_id} as rendered image was not generated."
+            )
+        update_progress("exporting")  # Export complete or skipped (Progress: 95%)
 
-        # Generate schematic if requested
-        update_progress("generating_schematic", 20)  # Start of schematic generation
+        # --- Generate Schematic ---
+        update_progress(
+            "generating_schematic", 0
+        )  # Start schematic gen (Progress: 95%)
+        schematic_settings = config.get(
+            "schematicSettings", metadata.get("schematicSettings", {})
+        )
+        # Use origins defined/extracted during the export step (or defaults if export skipped)
+        origin_y_schem = schematic_settings.get(
+            "originY", origin_y
+        )  # Use export's origin_y as fallback
 
-        # Extract schematic settings
-        schematic_settings = {}
-        if "schematicSettings" in config:
-            schematic_settings = config["schematicSettings"]
-        elif "schematicSettings" in metadata:
-            schematic_settings = metadata["schematicSettings"]
-
-        # Generate schematic if requested and block_ids available
         generate_schematic_flag = schematic_settings.get(
             "generateSchematic", config.get("generate_schematic", False)
         )
 
         if generate_schematic_flag and block_ids:
             try:
-                # Prepare schematic metadata
+                update_progress("generating_schematic", 20)  # Indicate start
                 schematic_metadata = {
                     "author": schematic_settings.get(
                         "author", config.get("schematic_author", "Pixeletica API")
@@ -772,93 +787,167 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                     ),
                 }
 
-                # Generate schematic
                 schematic_path = generate_schematic(
                     block_ids,
                     filename,
                     algorithm_id,
                     schematic_metadata,
                     origin_x=origin_x,
-                    origin_y=origin_y,
+                    origin_y=origin_y_schem,
                     origin_z=origin_z,
                 )
+                update_progress("generating_schematic", 80)  # Indicate progress
 
-                # Import schematic to task storage
                 if schematic_path and Path(schematic_path).exists():
                     with open(schematic_path, "rb") as f:
                         schematic_data = f.read()
-
                     schematic_filename = Path(schematic_path).name
                     schematic_file_info = storage.save_output_file(
                         task_id, schematic_data, schematic_filename, "schematic"
                     )
-
-                    # Update metadata with schematic info
                     metadata["schematicFile"] = schematic_file_info
-                    storage.save_task_metadata(task_id, metadata)
-            except Exception as e:
-                logger.error(f"Error generating schematic for task {task_id}: {e}")
-                metadata["schematicError"] = str(e)
-                storage.save_task_metadata(task_id, metadata)
+                    storage.save_task_metadata(
+                        task_id, metadata, force=True
+                    )  # Save after schematic info
+                else:
+                    logger.warning(
+                        f"Schematic file not found or not generated: {schematic_path}"
+                    )
 
-        update_progress("generating_schematic")  # Schematic generation complete
+            except Exception as e_schem:
+                logger.error(
+                    f"Error generating schematic for task {task_id}: {e_schem}",
+                    exc_info=True,
+                )
+                metadata["schematicError"] = str(e_schem)
+                storage.save_task_metadata(
+                    task_id, metadata, force=True
+                )  # Save error to metadata
+        else:
+            logger.info(
+                f"Skipping schematic generation for task {task_id} (Flag: {generate_schematic_flag}, Block IDs: {'Yes' if block_ids else 'No'})"
+            )
 
-        # Generate ZIP archive of all files
-        update_progress("creating_archive", 50)  # Start of archive creation
+        update_progress(
+            "generating_schematic"
+        )  # Schematic complete or skipped (Progress: 100%)
+
+        # --- Create ZIP Archive ---
+        # This step's weight (5) is effectively ignored as progress is already 100%
+        update_progress("creating_archive", 0)
         try:
             zip_path = storage.create_zip_archive(task_id)
             if zip_path:
                 with open(zip_path, "rb") as f:
                     zip_data = f.read()
-
                 zip_file_info = storage.save_output_file(
                     task_id, zip_data, f"pixeletica_task_{task_id}.zip", "output"
                 )
-
                 metadata["zipFile"] = zip_file_info
-                storage.save_task_metadata(task_id, metadata)
-        except Exception as e:
-            logger.error(f"Error creating ZIP archive for task {task_id}: {e}")
+                storage.save_task_metadata(
+                    task_id, metadata, force=True
+                )  # Save after zip info
+        except Exception as e_zip:
+            logger.error(
+                f"Error creating ZIP archive for task {task_id}: {e_zip}", exc_info=True
+            )
+            metadata["zipError"] = str(e_zip)  # Add zip error to metadata
+            storage.save_task_metadata(
+                task_id, metadata, force=True
+            )  # Save error to metadata
 
-        update_progress("creating_archive")  # Archive creation complete
+        update_progress(
+            "creating_archive"
+        )  # Archive complete or failed (Progress still 100%)
 
-        # Ensure task is marked as completed
-        logger.info(f"Task {task_id} finished processing, updating to COMPLETED status")
+        # --- Finalize Task ---
+        logger.info(f"Task {task_id} finished processing steps, marking as COMPLETED")
         completion_time = datetime.now().isoformat()
-        logger.info(f"Setting completion timestamp to: {completion_time}")
-
-        # Update the task completion status
-        final_metadata = update_task_status(task_id, TaskStatus.COMPLETED, progress=100)
-
-        # Make sure completion time is set
+        # Update status to COMPLETED and include any non-critical errors from optional steps
+        final_metadata = update_task_status(
+            task_id,
+            TaskStatus.COMPLETED,
+            progress=100,
+            error=metadata.get(
+                "error"
+            ),  # Keep existing error if any? Or clear? Let's clear for success.
+            traceback=metadata.get(
+                "traceback"
+            ),  # Keep existing traceback? Or clear? Let's clear.
+        )
         final_metadata["completedAt"] = completion_time
-        storage.save_task_metadata(task_id, final_metadata, force=True)
-        logger.info(f"✅ Task {task_id} successfully marked as COMPLETED")
+        # Add specific errors from optional steps if they occurred
+        if "exportError" in metadata:
+            final_metadata["exportError"] = metadata["exportError"]
+        if "schematicError" in metadata:
+            final_metadata["schematicError"] = metadata["schematicError"]
+        if "zipError" in metadata:
+            final_metadata["zipError"] = metadata["zipError"]
 
-        # Clear Redis cache for this task's metadata
+        # Save the final metadata state
+        storage.save_task_metadata(task_id, final_metadata, force=True)
+        logger.info(
+            f"✅ Task {task_id} successfully marked as COMPLETED at {completion_time}"
+        )
+
         storage.clear_metadata_cache(task_id)
         logger.info(f"✅ Cleared Redis cache for task {task_id}")
 
         end_time = datetime.now()
         processing_time = (end_time - start_time).total_seconds()
-        logger.info(
-            f"Task {task_id} completed successfully in {processing_time:.1f} seconds"
-        )
+        logger.info(f"Task {task_id} completed in {processing_time:.1f} seconds")
 
-        return {
+        # Prepare final result dictionary for Celery
+        task_result = {
             "taskId": task_id,
             "status": TaskStatus.COMPLETED.value,
             "message": f"Image processing completed successfully in {processing_time:.1f} seconds",
+            "results": {
+                "ditheredImage": final_metadata.get("ditheredImage"),
+                "renderedImage": final_metadata.get("renderedImage"),
+                "schematicFile": final_metadata.get("schematicFile"),
+                "zipFile": final_metadata.get("zipFile"),
+                "exports": final_metadata.get("exports"),
+            },
         }
+        # Include non-critical errors in the result message if they occurred
+        non_critical_errors = []
+        if "exportError" in final_metadata:
+            non_critical_errors.append(
+                f"Export failed: {final_metadata['exportError']}"
+            )
+        if "schematicError" in final_metadata:
+            non_critical_errors.append(
+                f"Schematic generation failed: {final_metadata['schematicError']}"
+            )
+        if "zipError" in final_metadata:
+            non_critical_errors.append(
+                f"ZIP archive creation failed: {final_metadata['zipError']}"
+            )
+        if non_critical_errors:
+            task_result["message"] += " with errors: " + "; ".join(non_critical_errors)
+            task_result["warnings"] = (
+                non_critical_errors  # Add a specific warnings field
+            )
+
+        return task_result
 
     except Exception as e:
-        logger.error(f"Error processing task {task_id}: {e}", exc_info=True)
-
-        # Always update the task status to failed
+        # --- Handle Critical Errors ---
+        logger.error(f"CRITICAL ERROR processing task {task_id}: {e}", exc_info=True)
         try:
-            update_task_status(task_id, TaskStatus.FAILED, error=str(e))
-            logger.info(f"Marked task {task_id} as FAILED due to error")
-        except Exception as e2:
-            logger.critical(f"Failed to mark task {task_id} as failed: {e2}")
+            import traceback
 
+            tb_str = traceback.format_exc()
+            # Update status to FAILED with error and traceback
+            update_task_status(
+                task_id, TaskStatus.FAILED, error=str(e), traceback=tb_str
+            )
+            logger.info(f"Marked task {task_id} as FAILED due to critical error")
+        except Exception as e2:
+            logger.critical(
+                f"Failed to mark task {task_id} as failed after critical error: {e2}"
+            )
+
+        # Return failure result for Celery
         return {"taskId": task_id, "status": TaskStatus.FAILED.value, "error": str(e)}

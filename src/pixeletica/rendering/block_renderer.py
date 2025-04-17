@@ -72,7 +72,7 @@ class BlockRenderer:
             if texture is None:
                 texture = self.texture_manager.get_texture(simple_block_id)
 
-        # If no texture is found, use default texture or create a colored placeholder
+        # If still no texture is found, use default texture or create a colored placeholder
         if texture is None:
             if missing_textures is not None:
                 missing_textures.add(block_id)

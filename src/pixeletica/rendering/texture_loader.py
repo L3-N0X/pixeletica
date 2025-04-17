@@ -7,10 +7,10 @@ texture pack and associating them with the appropriate blocks.
 
 import os
 import json
-import re
 import logging
 from PIL import Image
 from functools import lru_cache
+from src.pixeletica.rendering.texture_utils import get_best_texture_name
 
 # Set up logging
 logger = logging.getLogger("pixeletica.rendering.texture_loader")
@@ -38,29 +38,6 @@ class TextureManager:
 
     def _load_block_texture_mapping(self):
         """Load the mapping between block IDs and texture files."""
-        # This is a simplified version - in reality,
-        # this would be a more complex mapping potentially loaded from a config file
-
-        # Example mapping (to be expanded with actual block data)
-        # Format: 'block_id': {'top': 'texture_file.png', 'side': 'texture_file.png', 'bottom': 'texture_file.png'}
-        # If a block has the same texture on all sides, it can be a string instead of a dict
-
-        # For now, we'll use a basic mapping as a starting point
-        self.block_mapping = {
-            # Basic blocks
-            "minecraft:stone": "stone.png",
-            "minecraft:grass_block": {
-                "top": "grass_block_top.png",
-                "side": "grass_block_side.png",
-                "bottom": "dirt.png",
-            },
-            "minecraft:dirt": "dirt.png",
-            "minecraft:cobblestone": "cobblestone.png",
-            "minecraft:oak_planks": "oak_planks.png",
-            "minecraft:sand": "sand.png",
-            # Add more blocks as needed
-        }
-
         # Load block texture mapping from JSON file
         mapping_file = "./src/minecraft/block_texture_mapping.json"
         if os.path.exists(mapping_file):
@@ -126,41 +103,9 @@ class TextureManager:
         if cache_key in self.texture_cache:
             return self.texture_cache[cache_key]
 
-        texture_name = None
-        texture_info = self.block_mapping.get(block_id)
-
-        if texture_info:
-            if isinstance(texture_info, dict):
-                # Check if there's a specific texture for this face
-                if "texture" in texture_info:
-                    texture_name = texture_info["texture"]
-                else:
-                    texture_name = texture_info.get(face)
-                    if not texture_name:
-                        texture_name = texture_info.get("side")
-            else:
-                texture_name = texture_info
-
-        if not texture_name:
-            # Regex-based matching and prioritize "_top" textures
-            block_name = block_id.split(":")[-1]
-            base_texture_name = f"{block_name}.png"
-            top_texture_name = f"{block_name}_top.png"
-
-            if os.path.exists(os.path.join(self.texture_path, top_texture_name)):
-                texture_name = top_texture_name
-            elif os.path.exists(os.path.join(self.texture_path, base_texture_name)):
-                texture_name = base_texture_name
-            else:
-                # Fallback: try to find any texture matching block name using regex
-                regex = re.compile(f"{block_name}(|_\\w+)?\\.png$")
-                try:
-                    for filename in os.listdir(self.texture_path):
-                        if regex.match(filename):
-                            texture_name = filename
-                            break
-                except Exception as e:
-                    logger.error(f"Error listing texture directory: {e}")
+        texture_name = get_best_texture_name(
+            block_id, self.texture_path, self.block_mapping, face
+        )
 
         if texture_name:
             texture = self._load_texture(texture_name)
