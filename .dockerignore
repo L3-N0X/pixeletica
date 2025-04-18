@@ -38,6 +38,7 @@ htmlcov/
 # Project specific
 tasks/
 **/*.png
+!src/minecraft/texturepack/**/*.png
 **/*.jpg
 **/*.jpeg
 **/*.gif

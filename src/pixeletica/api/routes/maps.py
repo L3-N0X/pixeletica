@@ -14,7 +14,7 @@ from datetime import datetime
 from io import BytesIO
 
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
 from src.pixeletica.api.models import MapInfo, MapListResponse
@@ -39,8 +39,8 @@ logger = logging.getLogger("pixeletica.api.routes.maps")
 cors_origins_str = os.environ.get("CORS_ORIGINS", "http://localhost:5000")
 cors_origins = cors_origins_str.split(",") if cors_origins_str != "*" else ["*"]
 
-# Initialize router with appropriate prefix
-router = APIRouter(prefix="/api", tags=["maps"])
+# Initialize router without prefix (prefix is set in main app)
+router = APIRouter(tags=["maps"])
 
 
 @router.get(
@@ -478,7 +478,7 @@ async def get_map_full_image(map_id: str):
         },
     },
 )
-async def get_map_thumbnail(map_id: str):
+async def get_map_thumbnail(map_id: str, request: Request):
     """
     Get a thumbnail for a map (returns the first dithered image).
 
@@ -517,10 +517,6 @@ async def get_map_thumbnail(map_id: str):
             status_code=404, detail=f"Image not found for map: {map_id}"
         )
 
-    # Add CORS headers for file responses
-    from starlette.requests import Request
-
-    request = Request(scope={"type": "http"})
     origin = request.headers.get(
         "origin", cors_origins[0] if cors_origins != ["*"] else "*"
     )
@@ -558,6 +554,7 @@ async def get_map_tile(
     zoom: int,
     x: int,
     y: int,
+    request: Request,
     redis_client: redis.Redis = Depends(get_redis),
 ):
     """
@@ -589,15 +586,8 @@ async def get_map_tile(
     # Check standard path first
     tile_path = task_dir / "web" / "tiles" / str(zoom) / str(x) / f"{y}.png"
 
-    # If not found, try alternate structure (flat tiles directory)
+    # If not found, try flat structure: tiles/{x}_{y}.png (used for single zoom level)
     if not tile_path.exists():
-        alt_tile_path = task_dir / "web" / "tiles" / f"{x}_{y}.png"
-        if alt_tile_path.exists():
-            tile_path = alt_tile_path
-
-    # If still not found, try checking for possible single-zoom exports
-    if not tile_path.exists() and zoom == 0:
-        # Some exports might not use zoom levels but just x/y coordinates
         flat_tile_path = task_dir / "web" / "tiles" / f"{x}_{y}.png"
         if flat_tile_path.exists():
             tile_path = flat_tile_path
@@ -626,11 +616,7 @@ async def get_map_tile(
         # Log error but continue - Redis caching is not critical
         logger.warning(f"Failed to cache tile in Redis: {e}")
 
-    # Add CORS headers for file responses
-    from starlette.requests import Request
-
     # Get the request origin if available (for CORS handling)
-    request = Request(scope={"type": "http"})
     origin = request.headers.get(
         "origin", cors_origins[0] if cors_origins != ["*"] else "*"
     )

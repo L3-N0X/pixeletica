@@ -61,6 +61,11 @@ def export_web_tiles(image, output_dir, tile_size=512, origin_x=0, origin_z=0):
             # Crop the tile
             tile = image.crop((left, top, right, bottom))
 
+            # Create a transparent 512x512 image and paste the cropped tile onto it
+            from PIL import Image
+            tile_full = Image.new("RGBA", (tile_size, tile_size), (0, 0, 0, 0))
+            tile_full.paste(tile, (0, 0))
+
             # Calculate in-world coordinates
             world_x = left + origin_x
             world_z = top + origin_z
@@ -70,7 +75,7 @@ def export_web_tiles(image, output_dir, tile_size=512, origin_x=0, origin_z=0):
             tile_path = os.path.join(tiles_dir, tile_filename)
 
             # Save the tile
-            tile.save(tile_path, "PNG", optimize=True)
+            tile_full.save(tile_path, "PNG", optimize=True)
 
             # Add tile info to metadata
             tile_info = {
@@ -78,8 +83,8 @@ def export_web_tiles(image, output_dir, tile_size=512, origin_x=0, origin_z=0):
                 "z": z,
                 "world_x": world_x,
                 "world_z": world_z,
-                "width": right - left,
-                "height": bottom - top,
+                "width": tile_size,
+                "height": tile_size,
                 "filename": f"tiles/{tile_filename}",
             }
             metadata["tiles"].append(tile_info)

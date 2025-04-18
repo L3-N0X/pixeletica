@@ -91,13 +91,20 @@ async def root() -> Dict[str, Any]:
     return {"name": "Pixeletica API", "version": "0.1.0", "status": "online"}
 
 
+@app.get("/openapi.json", include_in_schema=False)
+async def openapi_json():
+    """
+    Serve OpenAPI schema at /openapi.json.
+    """
+    return app.openapi()
+
 @app.get("/docs", include_in_schema=False)
 async def custom_swagger_ui_html():
     """
-    Custom Swagger UI endpoint.
+    Custom Swagger UI endpoint at /docs.
     """
     return get_swagger_ui_html(
-        openapi_url=app.openapi_url,
+        openapi_url="/api/openapi.json",
         title=f"{app.title} - API Documentation",
         swagger_js_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js",
         swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css",

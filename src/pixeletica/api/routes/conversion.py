@@ -1078,8 +1078,9 @@ async def list_files(
             line_type = None
 
             # Enhanced pattern matching for line types with more robust split file detection
+            # Match single underscore before line type, and optional number suffix
             line_match = re.search(
-                r"__(block_lines|chunk_lines|both_lines|no_lines)(?:_split\d+|_\d+)?\.png$",
+                r"_(block_lines|chunk_lines|both_lines|no_lines)(?:_\d+)?\.png$",
                 filename,
             )
             if line_match:
