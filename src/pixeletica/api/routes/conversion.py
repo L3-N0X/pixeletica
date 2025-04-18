@@ -730,6 +730,19 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
         # First try - standard task status
         task_status = task_queue.get_task_status(task_id, bypass_cache=True)
 
+        # If task is already completed according to storage, return immediately
+        if task_status and task_status.get("status") == "completed":
+            logger.info(
+                f"[REQ-{request_id}] Task {task_id} already completed, returning status directly."
+            )
+            return TaskResponse(
+                taskId=task_id,
+                status="completed",
+                progress=100,  # Ensure progress is 100 for completed tasks
+                timestamp=task_status.get("updated", datetime.now().isoformat()),
+                error=task_status.get("error"),
+            )
+
         if not task_status:
             logger.warning(f"[REQ-{request_id}] Task {task_id} not found")
             raise HTTPException(
@@ -754,20 +767,11 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
                     f"[REQ-{request_id}] Celery task {celery_id} state: {celery_state}"
                 )
 
-                # If there's a state mismatch, update our task status accordingly
+                # If Celery reports FAILURE and our stored status isn't 'failed',
+                # update our status as a fallback/correction mechanism.
+                # We trust our stored status if Celery reports SUCCESS, as the worker
+                # might have failed logically even if the function executed.
                 if (
-                    celery_state == states.SUCCESS
-                    and task_status.get("status") != "completed"
-                ):
-                    logger.warning(
-                        f"[REQ-{request_id}] State mismatch: Celery SUCCESS but task status {task_status.get('status')}. Updating to completed."
-                    )
-                    task_status["status"] = "completed"
-                    task_status["progress"] = 100
-                    # Sync back to storage
-                    task_queue.update_task_status(task_id, "completed", 100)
-
-                elif (
                     celery_state == states.FAILURE
                     and task_status.get("status") != "failed"
                 ):

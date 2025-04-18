@@ -182,40 +182,12 @@ class ExportManager:
                 rendered_dir = os.path.join(export_dir, "rendered")
                 os.makedirs(rendered_dir, exist_ok=True)
 
-                # Export versions with and without lines
+                # Export versions based directly on versions_to_generate
                 large_results = {}
-
-                # Determine the appropriate subfolder based on line settings
-                folder_name = None
-                if include_no_lines_version and not include_lines_version:
-                    folder_name = "no_lines"
-                elif include_lines_version:
-                    if draw_chunk_lines and draw_block_lines:
-                        folder_name = "both_lines"
-                    elif draw_chunk_lines:
-                        folder_name = "chunk_lines"
-                    elif draw_block_lines:
-                        folder_name = "block_lines"
-                    else:  # Default to no_lines if lines requested but none specified
-                        folder_name = "no_lines"
-                # If neither version is explicitly requested, default based on line flags
-                elif not include_no_lines_version and not include_lines_version:
-                    if draw_chunk_lines or draw_block_lines:
-                        # Determine folder based on flags if include_lines_version was false
-                        if draw_chunk_lines and draw_block_lines:
-                            folder_name = "both_lines"
-                        elif draw_chunk_lines:
-                            folder_name = "chunk_lines"
-                        elif draw_block_lines:
-                            folder_name = "block_lines"
-                        else:
-                            folder_name = (
-                                "no_lines"  # Should not happen if flags are true
-                            )
-                    else:
-                        folder_name = "no_lines"  # Default if no lines requested at all
-
-                if folder_name:
+                for folder_name, (
+                    apply_chunk_lines,
+                    apply_block_lines,
+                ) in versions_to_generate.items():
                     # Create the appropriate subfolder
                     line_type_dir = os.path.join(rendered_dir, folder_name)
                     os.makedirs(line_type_dir, exist_ok=True)
@@ -225,20 +197,10 @@ class ExportManager:
 
                     if folder_name == "no_lines":
                         # Export without lines
-                        file_path = os.path.join(
-                            line_type_dir, f"{version_base_name}.png"
-                        )
-                        image.save(file_path)
-                        large_results["no_lines"] = file_path
-                        results["export_files"].append(
-                            {"path": file_path, "category": f"rendered/{folder_name}"}
-                        )
+                        image_to_save = image
                     else:
-                        # Apply appropriate lines based on folder name
-                        apply_chunk_lines = folder_name in ["chunk_lines", "both_lines"]
-                        apply_block_lines = folder_name in ["block_lines", "both_lines"]
-
-                        with_lines_image = apply_lines_to_image(
+                        # Apply appropriate lines based on the version being generated
+                        image_to_save = apply_lines_to_image(
                             image,
                             draw_chunk_lines=apply_chunk_lines,
                             chunk_line_color=chunk_line_color,
@@ -247,19 +209,19 @@ class ExportManager:
                             origin_x=origin_x,
                             origin_z=origin_z,
                         )
-                        file_path = os.path.join(
-                            line_type_dir, f"{version_base_name}.png"
-                        )
-                        with_lines_image.save(file_path)
-                        large_results[folder_name] = file_path
-                        results["export_files"].append(
-                            {"path": file_path, "category": f"rendered/{folder_name}"}
-                        )
+
+                    # Save the image
+                    file_path = os.path.join(line_type_dir, f"{version_base_name}.png")
+                    image_to_save.save(file_path)
+                    large_results[folder_name] = file_path
+                    results["export_files"].append(
+                        {"path": file_path, "category": "rendered"} # Use top-level category
+                    )
 
                 results["exports"]["large"] = large_results
 
             elif export_type == EXPORT_TYPE_SPLIT:
-                # Split into N equal parts - organize by line type subfolder
+                # Split into N equal parts - organized by line type subfolder
                 from src.pixeletica.export.image_splitter import split_image
 
                 # Create a properly configured texture manager for consistent rendering
@@ -314,7 +276,7 @@ class ExportManager:
                     split_results[folder_name] = split_paths
                     for p in split_paths:
                         results["export_files"].append(
-                            {"path": p, "category": f"rendered/{folder_name}"}
+                            {"path": p, "category": "rendered"} # Use top-level category
                         )
 
                 results["exports"]["split"] = split_results
