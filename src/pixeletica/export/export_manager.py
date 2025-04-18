@@ -56,6 +56,7 @@ class ExportManager:
         # Deprecated flags, kept for potential internal fallback logic but shouldn't be primary control
         include_lines_version=None,
         include_no_lines_version=None,
+        progress_callback=None,
     ):
         """
         Export an image in the specified formats, handling multiple line versions.
@@ -76,10 +77,14 @@ class ExportManager:
             version_options: Dictionary specifying which line versions to export (no_lines, block_lines, chunk_lines, both_lines)
             include_lines_version: Deprecated - use version_options instead
             include_no_lines_version: Deprecated - use version_options instead
+            progress_callback: Function to report progress (percentage, export type)
 
         Returns:
             Dictionary containing the export results consolidated into a single structure.
         """
+        # Initialize progress tracking for export types
+        total_types = len(export_types) if export_types else 0
+        processed_types = 0
         # Use self.output_dir directly as the base export directory
         export_dir = self.output_dir
         os.makedirs(export_dir, exist_ok=True)  # Ensure root task dir exists
@@ -152,7 +157,18 @@ class ExportManager:
 
                 # Web exports never have lines
                 web_dir = os.path.join(export_dir, "web")
-                # os.makedirs(web_dir, exist_ok=True) # web_export handles this
+
+                # Define fine-grained progress callback for web files
+                def web_progress_callback(percent, info):
+                    # Map web progress (0-100) to 40% of total pipeline (per roadmap)
+                    # The web_files step is assumed to be 40% of the total pipeline progress.
+                    # If progress_callback is provided, call it with mapped percentage and step name.
+                    if progress_callback:
+                        # The web_files step starts at 60% and ends at 100% (if following the roadmap)
+                        # So: mapped = 60 + percent * 0.4
+                        mapped = 60 + (percent * 0.4)
+                        mapped = min(100, max(0, mapped))
+                        progress_callback(mapped, "web_files")
 
                 # Export tiles using the simplified structure
                 web_result = export_web_tiles(
@@ -161,21 +177,27 @@ class ExportManager:
                     tile_size=web_tile_size,
                     origin_x=origin_x,
                     origin_z=origin_z,
+                    progress_callback=web_progress_callback,
                 )
                 results["exports"]["web"] = web_result
                 # Add web files to the list
                 results["export_files"].append(
                     {"path": os.path.join(web_dir, "tile-data.json"), "category": "web"}
                 )
-                for tile_info in web_result.get("tiles", []):
-                    results["export_files"].append(
-                        {
-                            "path": os.path.join(
-                                export_dir, tile_info["filename"]
-                            ),  # Path relative to task dir
-                            "category": "web",
-                        }
-                    )
+                for zoom_level in web_result.get("zoom_levels", []):
+                    for tile_info in zoom_level.get("tiles", []):
+                        results["export_files"].append(
+                            {
+                                "path": os.path.join(
+                                    web_dir, tile_info["filename"]
+                                ),
+                                "category": "web",
+                            }
+                        )
+                # report web export progress as 100% at the end (for safety)
+                processed_types += 1
+                if progress_callback:
+                    progress_callback(100, "web_files")
 
             elif export_type == EXPORT_TYPE_LARGE:
                 # Large single image - organized by line type
@@ -219,6 +241,10 @@ class ExportManager:
                     )
 
                 results["exports"]["large"] = large_results
+                # report large export progress
+                processed_types += 1
+                if progress_callback:
+                    progress_callback(int(processed_types / total_types * 100), 'large')
 
             elif export_type == EXPORT_TYPE_SPLIT:
                 # Split into N equal parts - organized by line type subfolder
@@ -280,6 +306,10 @@ class ExportManager:
                         )
 
                 results["exports"]["split"] = split_results
+                # report split export progress
+                processed_types += 1
+                if progress_callback:
+                    progress_callback(int(processed_types / total_types * 100), 'split')
 
         # Save metadata directly in the root output directory
         metadata_path = os.path.join(export_dir, "export_metadata.json")
@@ -321,6 +351,7 @@ def export_processed_image(
     algorithm_name="",
     output_dir="./out",
     version_options=None,  # Preferred way to specify line versions
+    progress_callback=None,
 ):
     """
     Convenience function for exporting processed images. Handles multiple line versions.
@@ -344,6 +375,7 @@ def export_processed_image(
             - only_block_lines: Export version with only block grid lines
             - only_chunk_lines: Export version with only chunk lines
             - both_lines: Export version with both block and chunk lines
+        progress_callback: Function to report progress (percentage, export type)
 
     Returns:
         Dictionary containing the export results consolidated into a single structure.
@@ -355,6 +387,8 @@ def export_processed_image(
         image,
         base_name,  # Pass the original base_name
         export_types=export_types,
+        # pass progress_callback for export progress
+        progress_callback=progress_callback,
         origin_x=origin_x,
         origin_z=origin_z,
         # Pass default flags for fallback if version_options is None

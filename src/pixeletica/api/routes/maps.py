@@ -586,6 +586,12 @@ async def get_map_tile(
     # Check standard path first
     tile_path = task_dir / "web" / "tiles" / str(zoom) / str(x) / f"{y}.png"
 
+    # If not found, try {zoom}/{x}_{y}.png (current structure)
+    if not tile_path.exists():
+        zoom_flat_tile_path = task_dir / "web" / "tiles" / str(zoom) / f"{x}_{y}.png"
+        if zoom_flat_tile_path.exists():
+            tile_path = zoom_flat_tile_path
+
     # If not found, try flat structure: tiles/{x}_{y}.png (used for single zoom level)
     if not tile_path.exists():
         flat_tile_path = task_dir / "web" / "tiles" / f"{x}_{y}.png"

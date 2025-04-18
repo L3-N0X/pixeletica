@@ -41,7 +41,7 @@ def resize_image(img, target_width=None, target_height=None):
         target_width = int(target_height * aspect_ratio)
 
     # Resize the image
-    resized_img = img.resize((target_width, target_height), Image.LANCZOS)
+    resized_img = img.resize((target_width, target_height), Image.NEAREST)
     return resized_img
 
 

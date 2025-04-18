@@ -840,14 +840,28 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
         if task_status.get("status") == "completed":
             task_status["progress"] = 100
 
-        # Return the response based on the task status
-        return TaskResponse(
-            taskId=task_id,
-            status=task_status["status"],
-            progress=task_status.get("progress", 0),
-            timestamp=task_status.get("updated", datetime.now().isoformat()),
-            error=task_status.get("error"),
-        )
+        # Gather extra progress metadata for the response
+        current_step = task_status.get("currentStep")
+        celery_id = task_status.get("celery_id") or task_status.get("celery_task_id")
+        celery_meta = None
+        if celery_id:
+            try:
+                from celery.result import AsyncResult
+                result = AsyncResult(celery_id, app=task_queue.celery_app)
+                celery_meta = result.info if hasattr(result, "info") else None
+            except Exception as e:
+                celery_meta = None
+
+        # Return the response based on the task status, including currentStep and meta
+        return {
+            "taskId": task_id,
+            "status": task_status["status"],
+            "progress": task_status.get("progress", 0),
+            "timestamp": task_status.get("updated", datetime.now().isoformat()),
+            "error": task_status.get("error"),
+            "currentStep": current_step,
+            "meta": celery_meta,
+        }
 
     except HTTPException:
         # Re-raise HTTP exceptions

@@ -503,21 +503,12 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
 
     try:
         # Define the total number of steps in the process for accurate progress tracking
+        # Roadmap weights: dithering 15%, block rendering 25%, exporting variants 20%, web files 40%
         steps = {
-            "initialization": {"weight": 5, "completed": False},
-            "loading_image": {"weight": 5, "completed": False},
-            "resizing_image": {"weight": 10, "completed": False},
-            "processing_image": {
-                "weight": 50,
-                "completed": False,
-            },  # Combined dither+render
-            "saving_outputs": {
-                "weight": 10,
-                "completed": False,
-            },  # Saving dithered/rendered
-            "exporting": {"weight": 15, "completed": False},
-            "generating_schematic": {"weight": 10, "completed": False},
-            "creating_archive": {"weight": 5, "completed": False},
+            "dithering": {"weight": 15, "completed": False},
+            "block_rendering": {"weight": 25, "completed": False},
+            "exporting": {"weight": 20, "completed": False},
+            "web_files": {"weight": 40, "completed": False},
         }
 
         # Function to calculate and update current progress
@@ -595,20 +586,37 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
             resized_img = original_img
             update_progress("resizing_image")  # Skip resize (Progress: 20%)
 
-        # --- Process Image using Shared Converter ---
-        update_progress("processing_image", 0)  # Mark start (Progress: 20%)
+        # --- Dithering Step ---
+        update_progress("dithering", 0)
         algorithm_name = config.get("algorithm", "floyd_steinberg")
         color_palette = config.get("color_palette", "minecraft")
         _, algorithm_id = get_algorithm_by_name(algorithm_name)
 
+        def dithering_progress_callback(sub_progress, step_name):
+            # sub_progress: 0-100 for dithering
+            update_progress("dithering", sub_progress)
+            logger.info(f"Task {task_id} dithering: {sub_progress}%")
+
+        # Dithering step (simulate or call actual dithering if separated)
+        # If dithering is part of process_image_to_blocks, call progress_callback accordingly
+        # For now, assume dithering is part of process_image_to_blocks and callback is called for dithering phase
+
+        # --- Block Rendering Step ---
+        def block_rendering_progress_callback(sub_progress, step_name):
+            # sub_progress: 0-100 for block rendering
+            update_progress("block_rendering", sub_progress)
+            logger.info(f"Task {task_id} block_rendering: {sub_progress}%")
+
+        # Compose a wrapper callback to dispatch to the correct step
         def processing_progress_callback(sub_progress, step_name):
-            # Scale sub-progress (0-100) to fit within the processing step's weight (50%)
-            # Base progress is 20% (init+load+resize)
-            # Use min(sub_progress, 100) to prevent exceeding 100% for the sub-step
-            current_step_progress = min(sub_progress, 100)
-            # Pass the scaled progress directly to update_progress
-            update_progress("processing_image", current_step_progress)
-            logger.info(f"Task {task_id} sub-step: {step_name} ({sub_progress}%)")
+            # step_name: "dithering" or "block_rendering"
+            if step_name == "dithering":
+                dithering_progress_callback(sub_progress, step_name)
+            elif step_name == "block_rendering":
+                block_rendering_progress_callback(sub_progress, step_name)
+            else:
+                # fallback: treat as block_rendering
+                block_rendering_progress_callback(sub_progress, step_name)
 
         processing_results = process_image_to_blocks(
             resized_img,
@@ -616,8 +624,9 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
             color_palette=color_palette,
             progress_callback=processing_progress_callback,
         )
-        # Ensure processing step is marked fully complete
-        update_progress("processing_image", 100)  # Mark complete (Progress: 70%)
+        # Ensure both steps are marked fully complete
+        update_progress("dithering", 100)
+        update_progress("block_rendering", 100)
 
         dithered_img = processing_results.get("dithered_image")  # Use .get for safety
         block_image = processing_results.get("rendered_image")
@@ -651,8 +660,8 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
         storage.save_task_metadata(task_id, metadata, force=True)
         update_progress("saving_outputs")  # Saving complete (Progress: 80%)
 
-        # --- Exporting ---
-        update_progress("exporting", 0)  # Start exporting (Progress: 80%)
+        # --- Exporting Step (image variants) ---
+        update_progress("exporting", 0)
         export_settings = {}
         origin_x, origin_y, origin_z = 0, 0, 0  # Default origins
 
@@ -681,6 +690,16 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                 task_output_dir = storage.TASKS_DIR / task_id
                 logger.info(f"Exporting files to task directory: {task_output_dir}")
 
+                # Progress callback for export_processed_image
+                def export_progress_callback(percent, step):
+                    # Map export progress (0-100) to "exporting" (20%) and "web_files" (40%)
+                    # If step == "web_files", call update_progress("web_files", percent)
+                    # Otherwise, call update_progress("exporting", percent)
+                    if step == "web_files":
+                        update_progress("web_files", percent)
+                    else:
+                        update_progress("exporting", percent)
+
                 export_results = export_processed_image(
                     block_image,
                     base_name,
@@ -695,6 +714,7 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                     version_options=version_options,
                     algorithm_name=algorithm_id,
                     output_dir=str(task_output_dir),  # Pass the root task directory
+                    progress_callback=export_progress_callback,
                 )
                 logger.info(f"Export results: {export_results}")
                 metadata["exports"] = export_results
@@ -702,9 +722,6 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                     task_id, metadata, force=True
                 )  # Save after export results
 
-                # The export_processed_image function saves files directly.
-                # The storage service should pick them up when listing files.
-                # No need to re-save them here.
                 logger.info(f"Export function saved files: {export_results.get('export_files', [])}")
 
             except Exception as e_export:
@@ -719,7 +736,8 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
             logger.warning(
                 f"Skipping export for task {task_id} as rendered image was not generated."
             )
-        update_progress("exporting")  # Export complete or skipped (Progress: 95%)
+        update_progress("exporting", 100)
+        update_progress("web_files", 100)
 
         # --- Generate Schematic ---
         update_progress(
