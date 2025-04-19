@@ -3,10 +3,73 @@
     "texture": "block/crafting_table_top.png"
   },
   "minecraft:ancient_debris": {
-    "texture": "block/ancient_debris_top.png"
+    "texture": "block/ancient_debris_side.png"
+  },
+  "minecraft:oak_wood": {
+    "texture": "block/oak_log.png"
+  },
+  "minecraft:dark_oak_wood": {
+    "texture": "block/dark_oak_log.png"
+  },
+  "minecraft:spruce_wood": {
+    "texture": "block/spruce_log.png"
+  },
+  "minecraft:birch_wood": {
+    "texture": "block/birch_log.png"
+  },
+  "minecraft:jungle_wood": {
+    "texture": "block/jungle_log.png"
+  },
+  "minecraft:acacia_wood": {
+    "texture": "block/acacia_log.png"
+  },
+  "minecraft:pale_oak_wood": {
+    "texture": "block/pale_oak_log.png"
+  },
+  "minecraft:warped_hyphae": {
+    "texture": "block/warped_stem.png"
+  },
+  "minecraft:crimson_hyphae": {
+    "texture": "block/crimson_stem.png"
+  },
+  "minecraft:warped_stem": {
+    "texture": "block/warped_stem.png"
+  },
+  "minecraft:crimson_stem": {
+    "texture": "block/crimson_stem.png"
+  },
+  "minecraft:stripped_birch_wood": {
+    "texture": "block/stripped_birch_log.png"
+  },
+  "minecraft:stripped_jungle_wood": {
+    "texture": "block/stripped_jungle_log.png"
+  },
+  "minecraft:stripped_oak_wood": {
+    "texture": "block/stripped_oak_log.png"
+  },
+  "minecraft:stripped_dark_oak_wood": {
+    "texture": "block/stripped_dark_oak_log.png"
+  },
+  "minecraft:stripped_spruce_wood": {
+    "texture": "block/stripped_spruce_log.png"
   },
   "minecraft:stripped_acacia_wood": {
     "texture": "block/stripped_acacia_log.png"
+  },
+  "minecraft:stripped_pale_oak_wood": {
+    "texture": "block/stripped_pale_oak_log.png"
+  },
+  "minecraft:stripped_cherry_wood": {
+    "texture": "block/stripped_cherry_log.png"
+  },
+  "minecraft:cherry_wood": {
+    "texture": "block/cherry_log.png"
+  },
+  "minecraft:mangrove_wood": {
+    "texture": "block/mangrove_log.png"
+  },
+  "minecraft:stripped_mangrove_wood": {
+    "texture": "block/stripped_mangrove_log.png"
   },
   "minecraft:smooth_quartz": {
     "texture": "block/quartz_block_bottom.png"

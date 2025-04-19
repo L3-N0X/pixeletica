@@ -120,7 +120,6 @@ fetch('http://localhost:8000/conversion/start', {
 })
 .then(response => response.json())
 .then(data => {
-  console.log('Success:', data);
   // data contains taskId, status, etc.
 })
 .catch(error => {
