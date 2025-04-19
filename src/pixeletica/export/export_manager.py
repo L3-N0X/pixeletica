@@ -5,15 +5,16 @@ This module provides functionality for exporting processed Minecraft images in v
 handling web exports, single large images, and split images with or without lines.
 """
 
-import os
 import datetime
 import json
+import logging
+import os
+from typing import Any, Dict, Optional
 
 from src.pixeletica.rendering.line_renderer import apply_lines_to_image
 from src.pixeletica.coordinates.chunk_calculator import calculate_image_offset
 
-import logging
-
+# Set up logging
 logger = logging.getLogger("pixeletica.export.export_manager")
 
 # Export settings constants
@@ -57,13 +58,14 @@ class ExportManager:
         web_tile_size=512,
         algorithm_name="",
         version_options=None,  # Preferred way to specify line versions
+        block_data: Optional[Dict[str, Any]] = None,  # Add block_data parameter
         # Deprecated flags, kept for potential internal fallback logic but shouldn't be primary control
         include_lines_version=None,
         include_no_lines_version=None,
         progress_callback=None,
     ):
         """
-        Export an image in the specified formats, handling multiple line versions.
+        Export an image in the specified formats, handling multiple line versions and block data.
 
         Args:
             image: PIL Image to export
@@ -79,6 +81,7 @@ class ExportManager:
             web_tile_size: Size of web tiles (e.g., 512×512)
             algorithm_name: Name of the algorithm used to process the image
             version_options: Dictionary specifying which line versions to export (no_lines, block_lines, chunk_lines, both_lines)
+            block_data: Optional dictionary containing 'blocks' and 'matrix' for blockdata.json export.
             include_lines_version: Deprecated - use version_options instead
             include_no_lines_version: Deprecated - use version_options instead
             progress_callback: Function to report progress (percentage, export type)
@@ -109,6 +112,20 @@ class ExportManager:
             "exports": {},
             "export_files": [],  # List to track all generated files for metadata
         }
+
+        # --- Save Block Data if provided ---
+        if block_data:
+            blockdata_path = os.path.join(export_dir, "blockdata.json")
+            try:
+                with open(blockdata_path, "w") as f:
+                    json.dump(block_data, f)  # No indent for potentially large matrix
+                logger.info(f"Saved block data mapping to {blockdata_path}")
+                results["export_files"].append(
+                    {"path": blockdata_path, "category": "block_data"}
+                )
+            except Exception as e:
+                logger.error(f"Failed to save blockdata.json: {e}")
+                # Decide if this is a critical error or just a warning
 
         # --- Determine which line versions to generate based on version_options ---
         versions_to_generate = {}  # Key: folder_name, Value: (apply_chunk, apply_block)
@@ -414,10 +431,11 @@ def export_processed_image(
     algorithm_name="",
     output_dir="./out",
     version_options=None,  # Preferred way to specify line versions
+    block_data: Optional[Dict[str, Any]] = None,  # Add block_data parameter
     progress_callback=None,
 ):
     """
-    Convenience function for exporting processed images. Handles multiple line versions.
+    Convenience function for exporting processed images. Handles multiple line versions and block data.
 
     Args:
         image: PIL Image to export
@@ -438,6 +456,7 @@ def export_processed_image(
             - only_block_lines: Export version with only block grid lines
             - only_chunk_lines: Export version with only chunk lines
             - both_lines: Export version with both block and chunk lines
+        block_data: Optional dictionary containing 'blocks' and 'matrix' for blockdata.json export.
         progress_callback: Function to report progress (percentage, export type)
 
     Returns:
@@ -463,6 +482,8 @@ def export_processed_image(
         web_tile_size=web_tile_size,
         # Pass version_options directly
         version_options=version_options,
+        # Pass block_data
+        block_data=block_data,
         # Deprecated flags are no longer needed here, handled by fallback in export_image
         algorithm_name=algorithm_name,
     )

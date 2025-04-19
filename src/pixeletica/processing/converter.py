@@ -7,14 +7,15 @@ This module centralizes the core conversion process:
 """
 
 import inspect
+import json
 import logging
 import os
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from PIL import Image
 
-from src.pixeletica.block_utils.block_loader import load_block_colors
+from src.pixeletica.block_utils.block_loader import get_block_colors, load_block_colors
 from src.pixeletica.dithering import get_algorithm_by_name
 from src.pixeletica.rendering.block_renderer import render_blocks_from_block_ids
 from src.pixeletica.rendering.texture_loader import (
@@ -58,7 +59,9 @@ def process_image_to_blocks(
         A dictionary containing:
         - 'rendered_image': PIL Image rendered with block textures.
         - 'dithered_image': PIL Image dithered with block colors.
-        - 'block_ids': 2D list of block IDs.
+        - 'block_ids': 2D list of Minecraft block IDs (e.g., "minecraft:stone").
+        - 'block_data': Dictionary containing 'blocks' (mapping short ID to block details)
+                        and 'matrix' (2D list of short IDs).
         - 'processing_time_dither': Time taken for dithering (seconds).
         - 'processing_time_render': Time taken for rendering (seconds).
 
@@ -120,7 +123,71 @@ def process_image_to_blocks(
     if dithered_image is None or block_ids is None:
         raise RuntimeError("Dithering function failed to return image or block IDs.")
 
-    # --- 3. Render Blocks with Textures ---
+    # --- 3. Generate Block Data (Short IDs and Matrix) ---
+    _report_progress(66, "Generating block data mapping")
+    start_blockdata_time = time.time()
+
+    # Find unique block IDs used in the image
+    unique_mc_ids = set()
+    for row in block_ids:
+        unique_mc_ids.update(row)
+
+    # Get all available block details
+    all_blocks_details = get_block_colors()
+    if not all_blocks_details:
+        raise RuntimeError("Failed to retrieve loaded block colors for mapping.")
+
+    # Create mapping from Minecraft ID to details for faster lookup
+    mc_id_to_details = {block["id"]: block for block in all_blocks_details}
+
+    # Create the 'blocks' dictionary mapping short ID to details
+    block_map_short_id_to_details: Dict[int, Dict[str, Any]] = {}
+    block_map_mc_id_to_short_id: Dict[str, int] = {}
+    short_id_counter = 0
+    for mc_id in sorted(list(unique_mc_ids)):  # Sort for consistent short ID assignment
+        if mc_id in mc_id_to_details:
+            details = mc_id_to_details[mc_id]
+            block_map_short_id_to_details[short_id_counter] = {
+                "name": details["name"],
+                "minecraft_id": details["id"],  # Use a distinct key
+                "hex": details["hex"],
+                "rgb": details["rgb"],
+            }
+            block_map_mc_id_to_short_id[mc_id] = short_id_counter
+            short_id_counter += 1
+        else:
+            logger.warning(
+                f"Minecraft ID '{mc_id}' found in dithered result but not in loaded block colors. Skipping."
+            )
+
+    # Create the 'matrix' of short IDs
+    height = len(block_ids)
+    width = len(block_ids[0]) if height > 0 else 0
+    matrix_short_ids: List[List[Optional[int]]] = [
+        [None for _ in range(width)] for _ in range(height)
+    ]
+
+    for r in range(height):
+        for c in range(width):
+            mc_id = block_ids[r][c]
+            if mc_id in block_map_mc_id_to_short_id:
+                matrix_short_ids[r][c] = block_map_mc_id_to_short_id[mc_id]
+            else:
+                # Should not happen if warning above is handled, but good practice
+                logger.warning(
+                    f"Could not find short ID for Minecraft ID '{mc_id}' at ({r},{c}). Setting to null."
+                )
+                matrix_short_ids[r][c] = None  # Or handle as error?
+
+    block_data = {
+        "blocks": block_map_short_id_to_details,
+        "matrix": matrix_short_ids,
+    }
+    processing_time_blockdata = time.time() - start_blockdata_time
+    _report_progress(69, "Block data mapping complete")
+    logger.info(f"Block data generation took {processing_time_blockdata:.2f} seconds.")
+
+    # --- 4. Render Blocks with Textures ---
     _report_progress(70, "Rendering blocks with textures")
     start_render_time = time.time()
     texture_manager = _get_texture_manager()  # Use shared texture manager
@@ -149,7 +216,9 @@ def process_image_to_blocks(
     return {
         "rendered_image": rendered_image,
         "dithered_image": dithered_image,
-        "block_ids": block_ids,
+        "block_ids": block_ids,  # Keep original MC IDs for potential other uses
+        "block_data": block_data,  # Add the new block data structure
         "processing_time_dither": processing_time_dither,
         "processing_time_render": processing_time_render,
+        # Add block data time? Optional.
     }

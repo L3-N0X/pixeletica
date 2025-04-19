@@ -696,3 +696,96 @@ async def get_map_tile(
     return StreamingResponse(
         BytesIO(tile_data), media_type="image/png", headers=headers
     )
+
+
+@router.get(
+    "/map/{map_id}/blockdata.json",
+    responses={
+        200: {
+            "description": "Block data mapping (short IDs to block details and matrix)",
+            "content": {"application/json": {}},
+        },
+        404: {
+            "description": "Block data not found",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Block data file not found for map: <map_id>"}
+                }
+            },
+        },
+    },
+)
+async def get_map_block_data(map_id: str, request: Request):
+    """
+    Get the block data JSON file for a specific map.
+
+    This file contains a mapping of short integer IDs to Minecraft block details
+    (name, minecraft_id, color) and a 2D matrix representing the dithered image
+    where each pixel corresponds to a short block ID.
+
+    Args:
+        map_id: Map identifier (task ID)
+        request: The incoming request object (for CORS headers)
+
+    Returns:
+        JSON file containing block data mapping and matrix.
+    """
+    # Check if map exists and locate the blockdata.json file
+    task_dir = storage.TASKS_DIR / map_id
+    blockdata_path = task_dir / "blockdata.json"
+
+    if not blockdata_path.exists():
+        logger.warning(
+            f"Block data file not found for map: {map_id} at {blockdata_path}"
+        )
+        raise HTTPException(
+            status_code=404, detail=f"Block data file not found for map: {map_id}"
+        )
+
+    # Get the request origin if available (for CORS handling)
+    origin = request.headers.get(
+        "origin", cors_origins[0] if cors_origins != ["*"] else "*"
+    )
+
+    # Add CORS headers for file responses
+    headers = {
+        "Access-Control-Allow-Origin": (
+            origin
+            if origin in cors_origins or cors_origins == ["*"]
+            else cors_origins[0]
+        ),
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Credentials": "true",
+    }
+
+    logger.info(f"Serving blockdata.json for map {map_id}")
+    return FileResponse(
+        path=blockdata_path, media_type="application/json", headers=headers
+    )
+
+
+# Handle OPTIONS for the new endpoint
+@router.options("/map/{map_id}/blockdata.json")
+async def options_map_blockdata():
+    """Handle OPTIONS requests for the blockdata endpoint."""
+    from fastapi.responses import Response
+    from starlette.requests import Request
+
+    request = Request(scope={"type": "http"})
+    origin = request.headers.get(
+        "origin", cors_origins[0] if cors_origins != ["*"] else "*"
+    )
+
+    headers = {
+        "Access-Control-Allow-Origin": (
+            origin
+            if origin in cors_origins or cors_origins == ["*"]
+            else cors_origins[0]
+        ),
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Max-Age": "600",
+    }
+    return Response(status_code=204, headers=headers)

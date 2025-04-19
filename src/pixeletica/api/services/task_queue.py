@@ -632,6 +632,7 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
         dithered_img = processing_results.get("dithered_image")  # Use .get for safety
         block_image = processing_results.get("rendered_image")
         block_ids = processing_results.get("block_ids")
+        block_data = processing_results.get("block_data")  # Get the block data
 
         # --- Save Dithered and Rendered Images ---
         update_progress("saving_outputs", 0)  # Start saving (Progress: 70%)
@@ -713,11 +714,14 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                     block_line_color=block_line_color,
                     split_count=split_count,
                     version_options=version_options,
+                    block_data=block_data,  # Pass block_data here
                     algorithm_name=algorithm_id,
                     output_dir=str(task_output_dir),  # Pass the root task directory
                     progress_callback=export_progress_callback,
                 )
-                logger.info(f"Export results: {export_results}")
+                logger.info(
+                    f"Export results (including blockdata.json if generated): {export_results}"
+                )
                 metadata["exports"] = export_results
                 storage.save_task_metadata(
                     task_id, metadata, force=True
