@@ -63,6 +63,11 @@ def export_web_tiles(
             new_height = int(height * scale)
         tiles_x = math.ceil(new_width / tile_size)
         tiles_z = math.ceil(new_height / tile_size)
+        # ---- REMOVE PRINT STATEMENT ----
+        # print(
+        #     f"DEBUG web_export: zoom={zoom}, new_width={new_width}, new_height={new_height}, tiles_x={tiles_x}, tiles_z={tiles_z}"
+        # )
+        # ------------------------------
         tiles_per_zoom.append((tiles_x, tiles_z))
         total_tiles += tiles_x * tiles_z
 
