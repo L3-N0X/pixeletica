@@ -6,4 +6,4 @@ API Configuration settings.
 MAX_FILE_SIZE = 100 * 1024 * 1024
 
 # Maximum time (in seconds) for preview conversion
-PREVIEW_CONVERSION_TIMEOUT = 25 
+PREVIEW_CONVERSION_TIMEOUT = 25

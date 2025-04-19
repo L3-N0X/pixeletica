@@ -4,6 +4,7 @@ Task queue service for handling background processing of image conversion tasks.
 This module provides a robust implementation of Celery-based task queuing with reliable
 state management between Redis and filesystem storage.
 """
+
 import logging
 import os
 import json
@@ -722,7 +723,9 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
                     task_id, metadata, force=True
                 )  # Save after export results
 
-                logger.info(f"Export function saved files: {export_results.get('export_files', [])}")
+                logger.info(
+                    f"Export function saved files: {export_results.get('export_files', [])}"
+                )
 
             except Exception as e_export:
                 logger.error(
@@ -758,19 +761,25 @@ def process_image_task(self, task_id: str) -> Dict[str, Any]:
         if generate_schematic_flag and block_ids:
             try:
                 # --- Add logging for block_ids ---
-                logger.info(f"Task {task_id}: Checking block_ids before generating schematic.")
+                logger.info(
+                    f"Task {task_id}: Checking block_ids before generating schematic."
+                )
                 logger.info(f"Task {task_id}: block_ids type: {type(block_ids)}")
                 if isinstance(block_ids, np.ndarray):
                     logger.info(f"Task {task_id}: block_ids shape: {block_ids.shape}")
                     # Log a small sample, e.g., the first 5x5 elements if it's 2D
                     if block_ids.ndim >= 2:
-                         sample = block_ids[:min(5, block_ids.shape[0]), :min(5, block_ids.shape[1])]
-                         logger.info(f"Task {task_id}: block_ids sample:\n{sample}")
+                        sample = block_ids[
+                            : min(5, block_ids.shape[0]), : min(5, block_ids.shape[1])
+                        ]
+                        logger.info(f"Task {task_id}: block_ids sample:\n{sample}")
                     elif block_ids.ndim == 1:
-                         sample = block_ids[:min(5, block_ids.shape[0])]
-                         logger.info(f"Task {task_id}: block_ids sample: {sample}")
+                        sample = block_ids[: min(5, block_ids.shape[0])]
+                        logger.info(f"Task {task_id}: block_ids sample: {sample}")
                 else:
-                    logger.warning(f"Task {task_id}: block_ids is not a NumPy array or is None/empty.")
+                    logger.warning(
+                        f"Task {task_id}: block_ids is not a NumPy array or is None/empty."
+                    )
                 # --- End logging ---
                 update_progress("generating_schematic", 20)  # Indicate start
                 schematic_metadata = {

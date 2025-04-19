@@ -847,9 +847,10 @@ async def get_conversion_status(task_id: str) -> TaskResponse:
         if celery_id:
             try:
                 from celery.result import AsyncResult
+
                 result = AsyncResult(celery_id, app=task_queue.celery_app)
                 celery_meta = result.info if hasattr(result, "info") else None
-            except Exception as e:
+            except Exception:
                 celery_meta = None
 
         # Return the response based on the task status, including currentStep and meta

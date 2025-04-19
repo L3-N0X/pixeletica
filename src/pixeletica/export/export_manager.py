@@ -12,6 +12,10 @@ import json
 from src.pixeletica.rendering.line_renderer import apply_lines_to_image
 from src.pixeletica.coordinates.chunk_calculator import calculate_image_offset
 
+import logging
+
+logger = logging.getLogger("pixeletica.export.export_manager")
+
 # Export settings constants
 EXPORT_TYPE_WEB = "web"
 EXPORT_TYPE_LARGE = "large"
@@ -179,21 +183,72 @@ class ExportManager:
                     origin_z=origin_z,
                     progress_callback=web_progress_callback,
                 )
-                results["exports"]["web"] = web_result
-                # Add web files to the list
+                # web_result now contains the detailed metadata including zoom_levels with tiles_x/tiles_z
+
+                # --- Construct and save the lean export_metadata.json for the API ---
+                lean_metadata = {
+                    "id": base_name,  # Assuming base_name is the task_id
+                    "name": f"Map {base_name[:8]}",
+                    "created": datetime.datetime.now().isoformat(),
+                    "description": None,  # Add later if needed
+                    "width": web_result.get("width"),
+                    "height": web_result.get("height"),
+                    "origin_x": web_result.get("origin_x"),
+                    "origin_z": web_result.get("origin_z"),
+                    "tileSize": web_result.get(
+                        "tile_size"
+                    ),  # Rename for frontend consistency
+                    "maxZoom": web_result.get(
+                        "max_zoom"
+                    ),  # Rename for frontend consistency
+                    "minZoom": web_result.get(
+                        "min_zoom"
+                    ),  # Rename for frontend consistency
+                    "tileFormat": "png",  # Assuming PNG, adjust if format varies
+                    "zoomLevels": [  # Extract only necessary zoom level info
+                        {
+                            "zoomLevel": zl.get("zoomLevel"),
+                            "tiles_x": zl.get("tiles_x"),
+                            "tiles_z": zl.get("tiles_z"),
+                        }
+                        for zl in web_result.get("zoom_levels", [])
+                    ],
+                    # Add other relevant top-level info if needed
+                    "dithering_algorithm": algorithm_name,
+                    # "color_palette": "minecraft", # Add if available/relevant
+                }
+
+                export_metadata_path = os.path.join(export_dir, "export_metadata.json")
+                try:
+                    with open(export_metadata_path, "w") as f:
+                        json.dump(lean_metadata, f, indent=2)
+                    logger.info(
+                        f"Saved lean web export metadata to {export_metadata_path}"
+                    )
+                    results["export_files"].append(
+                        {"path": export_metadata_path, "category": "metadata"}
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to save lean export metadata: {e}")
+
+                # Keep track of the detailed tile-data.json path as well
+                detailed_metadata_path = os.path.join(web_dir, "tile-data.json")
                 results["export_files"].append(
-                    {"path": os.path.join(web_dir, "tile-data.json"), "category": "web"}
+                    {"path": detailed_metadata_path, "category": "web_detailed"}
                 )
-                for zoom_level in web_result.get("zoom_levels", []):
-                    for tile_info in zoom_level.get("tiles", []):
-                        results["export_files"].append(
-                            {
-                                "path": os.path.join(
-                                    web_dir, tile_info["filename"]
-                                ),
-                                "category": "web",
-                            }
-                        )
+                # Add individual tile files to export_files (optional, could be large)
+                # for zoom_level in web_result.get("zoom_levels", []):
+                #     for tile_info in zoom_level.get("tiles", []):
+                #         results["export_files"].append(
+                #             {
+                #                 "path": os.path.join(web_dir, tile_info["filename"]),
+                #                 "category": "web_tile",
+                #             }
+                #         )
+
+                # Store the lean metadata in the main results dict for potential immediate use?
+                # results["exports"]["web_summary"] = lean_metadata # Optional
+
                 # report web export progress as 100% at the end (for safety)
                 processed_types += 1
                 if progress_callback:
@@ -237,14 +292,17 @@ class ExportManager:
                     image_to_save.save(file_path)
                     large_results[folder_name] = file_path
                     results["export_files"].append(
-                        {"path": file_path, "category": "rendered"} # Use top-level category
+                        {
+                            "path": file_path,
+                            "category": "rendered",
+                        }  # Use top-level category
                     )
 
                 results["exports"]["large"] = large_results
                 # report large export progress
                 processed_types += 1
                 if progress_callback:
-                    progress_callback(int(processed_types / total_types * 100), 'large')
+                    progress_callback(int(processed_types / total_types * 100), "large")
 
             elif export_type == EXPORT_TYPE_SPLIT:
                 # Split into N equal parts - organized by line type subfolder
@@ -255,9 +313,7 @@ class ExportManager:
                     TextureManager,
                     DEFAULT_TEXTURE_PATH,
                 )
-                import logging
 
-                logger = logging.getLogger("pixeletica.export.export_manager")
                 texture_path = os.path.abspath(DEFAULT_TEXTURE_PATH)
                 logger.info(
                     f"Creating TextureManager with absolute path: {texture_path}"
@@ -302,25 +358,32 @@ class ExportManager:
                     split_results[folder_name] = split_paths
                     for p in split_paths:
                         results["export_files"].append(
-                            {"path": p, "category": "rendered"} # Use top-level category
+                            {
+                                "path": p,
+                                "category": "rendered",
+                            }  # Use top-level category
                         )
 
                 results["exports"]["split"] = split_results
                 # report split export progress
                 processed_types += 1
                 if progress_callback:
-                    progress_callback(int(processed_types / total_types * 100), 'split')
+                    progress_callback(int(processed_types / total_types * 100), "split")
 
         # Save metadata directly in the root output directory
         metadata_path = os.path.join(export_dir, "export_metadata.json")
         try:
-            # Attempt to make the results JSON serializable
+            # Attempt to make the *overall* results JSON serializable
+            # Note: We already saved the specific lean web metadata above.
+            # This saves the consolidated results of *all* export types.
             serializable_results = json.loads(json.dumps(results, default=str))
             with open(metadata_path, "w") as f:
                 json.dump(serializable_results, f, indent=2)
-            results["export_files"].append(
-                {"path": metadata_path, "category": "metadata"}
-            )
+            # Don't add metadata_path again if it's the same as export_metadata_path
+            if metadata_path not in [f["path"] for f in results["export_files"]]:
+                results["export_files"].append(
+                    {"path": metadata_path, "category": "consolidated_metadata"}
+                )
         except TypeError as e:
             import logging
 

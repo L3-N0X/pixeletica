@@ -16,7 +16,6 @@ from io import BytesIO
 import redis.asyncio as redis
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
-
 from src.pixeletica.api.models import MapInfo, MapListResponse
 from src.pixeletica.api.services import storage
 
@@ -235,46 +234,100 @@ async def get_map_metadata(map_id: str):
     """
     # Check if map exists
     task_dir = storage.TASKS_DIR / map_id
+    if not task_dir.is_dir():
+        raise HTTPException(
+            status_code=404, detail=f"Map directory not found: {map_id}"
+        )
 
-    # Try various metadata file locations
-    metadata_path = task_dir / "web" / "metadata.json"
-    tile_data_path = task_dir / "web" / "tile-data.json"
-
+    # --- NEW: Prioritize export_metadata.json in the task root ---
+    export_metadata_path = task_dir / "export_metadata.json"
     metadata = None
 
-    # First try traditional metadata.json
-    if metadata_path.exists():
+    if export_metadata_path.exists():
         try:
-            with open(metadata_path, "r") as f:
+            with open(export_metadata_path, "r") as f:
                 metadata = json.load(f)
-                logger.info(f"Found metadata.json for map {map_id}")
+                logger.info(
+                    f"Loaded metadata from export_metadata.json for map {map_id}"
+                )
+                # Ensure essential fields are present (adjust as needed based on export_manager)
+                if not all(
+                    k in metadata
+                    for k in [
+                        "id",
+                        "width",
+                        "height",
+                        "tileSize",
+                        "maxZoom",
+                        "minZoom",
+                        "zoomLevels",
+                    ]
+                ):
+                    logger.warning(
+                        f"export_metadata.json for {map_id} might be incomplete. Falling back."
+                    )
+                    metadata = None  # Force fallback if essential keys missing
         except Exception as e:
-            logger.error(f"Failed to read metadata.json for map {map_id}: {e}")
+            logger.error(f"Failed to read export_metadata.json for map {map_id}: {e}")
+            metadata = None  # Force fallback on error
 
-    # If not found or error, try tile-data.json
-    if not metadata and tile_data_path.exists():
-        try:
-            with open(tile_data_path, "r") as f:
-                tile_data = json.load(f)
-                logger.info(f"Found tile-data.json for map {map_id}")
+    # --- Fallback logic (existing code) ---
+    if not metadata:
+        logger.info(f"Falling back to legacy metadata sources for map {map_id}")
+        # Try various legacy metadata file locations
+        legacy_metadata_path = task_dir / "web" / "metadata.json"  # Oldest web metadata
+        tile_data_path = task_dir / "web" / "tile-data.json"  # Detailed web tile data
 
-                # Convert tile data format to metadata format
-                metadata = {
-                    "width": tile_data.get("width"),
-                    "height": tile_data.get("height"),
-                    "origin_x": tile_data.get("origin_x", 0),
-                    "origin_z": tile_data.get("origin_z", 0),
-                    "tileSize": tile_data.get("tile_size", 512),
-                    "tiles_x": tile_data.get("tiles_x", 1),
-                    "tiles_z": tile_data.get("tiles_z", 1),
-                    "maxZoom": 0,  # Default single zoom level
-                    "minZoom": 0,
-                    "tileFormat": "png",
-                }
-        except Exception as e:
-            logger.error(f"Failed to read tile-data.json for map {map_id}: {e}")
+        # First try legacy metadata.json
+        if legacy_metadata_path.exists():
+            try:
+                with open(legacy_metadata_path, "r") as f:
+                    metadata = json.load(f)
+                    logger.info(f"Found legacy metadata.json for map {map_id}")
+            except Exception as e:
+                logger.error(
+                    f"Failed to read legacy metadata.json for map {map_id}: {e}"
+                )
 
-    # If still no metadata, check if we can generate minimal metadata
+        # If not found or error, try tile-data.json (and adapt its structure)
+        if not metadata and tile_data_path.exists():
+            try:
+                with open(tile_data_path, "r") as f:
+                    tile_data = json.load(f)
+                    logger.info(
+                        f"Found tile-data.json for map {map_id}, adapting structure."
+                    )
+
+                    # Convert detailed tile data format to the lean metadata format expected by frontend
+                    metadata = {
+                        "id": map_id,
+                        "name": f"Map {map_id[:8]}",  # Placeholder name
+                        "created": None,  # No created time in tile-data
+                        "description": None,
+                        "width": tile_data.get("width"),
+                        "height": tile_data.get("height"),
+                        "origin_x": tile_data.get("origin_x", 0),
+                        "origin_z": tile_data.get("origin_z", 0),
+                        "tileSize": tile_data.get("tile_size", 512),
+                        "maxZoom": tile_data.get("max_zoom"),
+                        "minZoom": tile_data.get("min_zoom"),
+                        "tileFormat": "png",  # Assuming PNG
+                        "zoomLevels": [  # Extract zoom level info
+                            {
+                                "zoomLevel": zl.get("zoomLevel"),
+                                "tiles_x": zl.get("tiles_x"),
+                                "tiles_z": zl.get("tiles_z"),
+                            }
+                            for zl in tile_data.get("zoom_levels", [])
+                        ],
+                        # Add other fields if available in tile_data
+                    }
+            except Exception as e:
+                logger.error(
+                    f"Failed to read/adapt tile-data.json for map {map_id}: {e}"
+                )
+
+    # If still no metadata after fallbacks, check if we can generate minimal metadata from images/dirs
     if not metadata:
         # Check for dithered images or web exports
         dithered_dir = task_dir / "dithered"
@@ -395,8 +448,8 @@ async def options_map_endpoints():
     """
     Handle OPTIONS requests for map endpoints to support CORS preflight requests.
     """
-    from starlette.requests import Request
     from fastapi.responses import Response
+    from starlette.requests import Request
 
     # Get the request origin if available (for CORS handling)
     request = Request(scope={"type": "http"})

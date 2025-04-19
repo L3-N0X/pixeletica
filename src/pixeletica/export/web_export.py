@@ -10,7 +10,9 @@ import json
 import math
 
 
-def export_web_tiles(image, output_dir, tile_size=512, origin_x=0, origin_z=0, progress_callback=None):
+def export_web_tiles(
+    image, output_dir, tile_size=512, origin_x=0, origin_z=0, progress_callback=None
+):
     """
     Export an image as a set of web-optimized tiles for multiple zoom levels.
 
@@ -25,7 +27,6 @@ def export_web_tiles(image, output_dir, tile_size=512, origin_x=0, origin_z=0, p
     Returns:
         Dictionary containing information about the exported tiles
     """
-    import copy
     from PIL import Image
 
     os.makedirs(output_dir, exist_ok=True)
@@ -124,20 +125,25 @@ def export_web_tiles(image, output_dir, tile_size=512, origin_x=0, origin_z=0, p
                     percent = (tile_counter / total_tiles) * 100
                     # Call every 5% or on last tile
                     if tile_counter == total_tiles or percent % 5 < (100 / total_tiles):
-                        progress_callback(percent, {
-                            "zoom": zoom,
-                            "x": x,
-                            "z": z,
-                            "tile_counter": tile_counter,
-                            "total_tiles": total_tiles,
-                        })
+                        progress_callback(
+                            percent,
+                            {
+                                "zoom": zoom,
+                                "x": x,
+                                "z": z,
+                                "tile_counter": tile_counter,
+                                "total_tiles": total_tiles,
+                            },
+                        )
 
-        metadata["zoom_levels"].append({
-            "zoomLevel": zoom,
-            "tiles_x": tiles_x,
-            "tiles_z": tiles_z,
-            "tiles": zoom_tiles,
-        })
+        metadata["zoom_levels"].append(
+            {
+                "zoomLevel": zoom,
+                "tiles_x": tiles_x,
+                "tiles_z": tiles_z,
+                "tiles": zoom_tiles,
+            }
+        )
 
     # Save metadata as JSON
     metadata_path = os.path.join(output_dir, "tile-data.json")
